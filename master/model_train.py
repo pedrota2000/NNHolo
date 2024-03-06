@@ -25,7 +25,7 @@ class train_model():
         if os.path.exists(path_results) == False:
             os.mkdir(path_results) 
             print("Directory '% s' created" % directory)
-        c = NNholo(data_path = os.path.dirname(data_path,saving_path = path_results,sampling_method=sampling)
+        c = NNholo(data_path = data_path,saving_path = path_results,sampling_method=sampling)
         
         
         store_mse = Store_MSE_Loss()

@@ -14,7 +14,7 @@ from platform import python_version
 class train_model():
     def __init__(self,data_path,results_path = "train_results",sampling = "chebyshev2"):
         import numpy
-        #import NNHolo as NNHolo
+        import NNholo
         from tqdm.auto import tqdm
         # Directory
         directory = results_path

@@ -732,7 +732,7 @@ class NNholo():
         plt.gca().spines['bottom'].set_linewidth(thick)
         plt.gca().spines['left'].set_linewidth(thick)
         #plt.legend()
-        fig.savefig(f'/Users/pablo/Desktop/NNholo/To run/January (2024)/Plots paper/colored s(T) by phi_h (phiM={phiM_chosen}).pdf')
+        fig.savefig(f'{self.path}/colored s(T) by phi_h (phiM={phiM_chosen}).pdf')
 
         plt.show()
         
@@ -775,7 +775,7 @@ class NNholo():
         plt.gca().spines['left'].set_linewidth(thick)
         plt.show()
 
-        fig.savefig(f'/Users/pablo/Desktop/NNholo/To run/January (2024)/Plots paper/s(phi_h) (phiM={phiM_chosen}).pdf')
+        fig.savefig(f'{self.path}/s(phi_h) (phiM={phiM_chosen}).pdf')
 
         
     def compare_to_yago(self, fontsize = 14, legend_fontsize=14, n_fontsize=14, wspace=0.5, yago_linewidth = 3, yago_style = '--'):
@@ -857,7 +857,7 @@ class NNholo():
             plt.subplots_adjust(wspace=wspace)  # Increase or decrease the value to adjust the spacing
             plt.show()
             
-            fig.savefig(f'/Users/pablo/Desktop/NNholo/To run/January (2024)/Plots paper/DE solution_pt_{i+1}_(phiM=1,best).pdf')
+            fig.savefig(f'{self.path}/DE solution_pt_{i+1}_(best).pdf')
             
     def plot_V_theory(self, phim = 1):
         

@@ -12,7 +12,7 @@ from platform import python_version
 
 print(python_version())
 import numpy
-from NNholo_loc_onlyPhi_renorm import *
+from NNholo import *
 from tqdm.auto import tqdm
 # Directory
 directory = "loc_test_1_ESN"

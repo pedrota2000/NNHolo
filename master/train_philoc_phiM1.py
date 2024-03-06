@@ -17,9 +17,9 @@ from tqdm.auto import tqdm
 # Directory
 directory = "loc_test_1_ESN"
 # Parent Directory path 
-parent_dir = os.path.dirname(os.path.abspath(__file__))+"/phiM1"
+#parent_dir = os.path.dirname(os.path.abspath(__file__))+"/phiM1"
 # Path 
-path_results = os.path.join(parent_dir, directory) 
+path_results = os.path.join(directory) 
 if os.path.exists(path_results) == False:
     os.mkdir(path_results) 
     print("Directory '% s' created" % directory)

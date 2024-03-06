@@ -12,7 +12,7 @@ from platform import python_version
 
 #print(python_version())
 class train_model():
-    def __init__(self,data_path,results_path = "train_results",sampling = "chebyshev2")
+    def __init__(self,data_path,results_path = "train_results",sampling = "chebyshev2"):
         import numpy
         from NNholo import *
         from tqdm.auto import tqdm

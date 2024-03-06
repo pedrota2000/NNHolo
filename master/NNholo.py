@@ -338,7 +338,7 @@ for i in range(len(S_yago)):
 # DEFINE THE WHOLE RUTINE
 class NNholo():
 
-    def __init__(self, data_path, saving_path, init_pt_curve = 55, delta = 0.0, curriculum = 1.0):
+    def __init__(self, data_path, saving_path,sampling_metho ,init_pt_curve = 55, delta = 0.0, curriculum = 1.0):
 
         self.delta = delta
         self.curriculum = curriculum

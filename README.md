@@ -5,9 +5,10 @@ NNHolo is a Deep-Learning tool based on neurodiffeq package (https://github.com/
 
 ## How does this work?
 
-NNHolo is aimed to recover a scalar potential in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature and the entropy from value of the solutions on the horizon. However, trying to get the scalar field potential by only knowing the boundary conditions is a much more difficult problem. 
+NNHolo is aimed to recover a scalar potential in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature and the entropy from the value of the solutions on the horizon. However, trying to get the scalar field potential by only knowing the boundary conditions is a much more difficult problem. 
 
-For this purpose, our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points (T,S).
+For this purpose, our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points of the entropy as a function of the temperature. To do so, we have used solution bundles (implemented in neurodiffeq) to solve the differential equations for different boundary conditions (that are given by the points along S(T)) at the same time. Once a solution is found, another NN is introduced to make a guess for the scalar potential. Thus, all these functions are then introduced in the differential equations to compute the residuals, which square is going to be the loss function of the model. The optimization proccess to minimize the loss function is done using adam optimizer.
+
 
 
 ## How to run the code

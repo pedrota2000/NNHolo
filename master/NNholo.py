@@ -74,6 +74,30 @@ def DV_or(phi):
             phim**4*(12*phi**8*(-45 + 4*phi**2) + phiq**2*(9 + 4*phi**2) -
            4*phiq*phi**4*(-9 + 8*phi**2))))
 
+# class NetA(FCNN):
+#     def __init__(self, hidden_units=[32,32,32]):
+#         # Initialize as FCNN with 3 inputs (u, S, T) and 4 outputs (Σ, A, νΣ, νA)
+#         super().__init__(n_input_units=3, hidden_units=hidden_units, n_output_units=4)
+    
+#     def forward(self, u, S, T):
+#         x = torch.cat([u, S, T], dim=1)
+#         return super().forward(x)
+
+# class NetB(FCNN):
+#     def __init__(self, hidden_units=[32,32,32], include_metric_vars=False):
+#         # Initialize as FCNN with either 1 input (u) or 5 inputs (u, Σ, A, νΣ, νA)
+#         # and 2 outputs (ϕ, νϕ)
+#         n_input_units = 1 if not include_metric_vars else 5
+#         super().__init__(n_input_units=n_input_units, hidden_units=hidden_units, n_output_units=2)
+#         self.include_metric_vars = include_metric_vars
+    
+#     def forward(self, u, Sigma=None, A=None, nu_Sigma=None, nu_A=None):
+#         if self.include_metric_vars:
+#             x = torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1)
+#         else:
+#             x = u.unsqueeze(1)
+#         return super().forward(x)
+
 class CustomNN(nn.Module):
     def __init__(self, n_input_units, hidden_units, actv, n_output_units):
         super(CustomNN, self).__init__()
@@ -84,7 +108,7 @@ class CustomNN(nn.Module):
         # First hidden layer with special behavior
         self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
 
-        # Learnable parameters mu and sigma for the firs layer
+        # Learnable parameters mu and sigma for the first layer
         #self.mu =  torch.linspace(0,1, hidden_units[0])
         self.mu = nn.Parameter(torch.linspace(0,2, hidden_units[0]))
         #self.sigma = nn.Parameter(torch.ones(hidden_units[0])*0.1)
@@ -124,23 +148,44 @@ class MeshGenerator(BaseGenerator):
 
     def get_examples(self):
 
-        u = self.g1.get_examples()
-        u = u.reshape(-1, 1, 1)
+        # Get u values
+        u = self.g1.get_examples().reshape(-1, 1)
+        batch_size = u.shape[0]
+
+        # u = u.reshape(-1, 1, 1)
 
         bundle_params = self.pg.get_examples()
         if isinstance(bundle_params, torch.Tensor):
             bundle_params = (bundle_params,)
-        assert len(bundle_params[0].shape) == 1, "shape error, ask shuheng"
-        n_params = len(bundle_params)
 
+        # Stack and reshape
         bundle_params = torch.stack(bundle_params, dim=1)
-        bundle_params = bundle_params.reshape(1, -1, n_params)
+        
+        # Make sizes match
+        if bundle_params.shape[0] != batch_size:
+            bundle_params = bundle_params.expand(batch_size, -1)
+        
+        # Split into S and T
+        S = bundle_params[:, 0].reshape(-1, 1)
+        T = bundle_params[:, 1].reshape(-1, 1)
 
-        uu, bb = torch.broadcast_tensors(u, bundle_params)
-        uu = uu[:, :, 0].reshape(-1)
-        bb = [bb[:, :, i].reshape(-1) for i in range(n_params)]
+        # Verify shapes
+        # assert u.shape[0] == S.shape[0] == T.shape[0], \
+        #     f"Shape mismatch: u:{u.shape}, S:{S.shape}, T:{T.shape}"
 
-        return uu, *bb
+        # assert len(bundle_params[0].shape) == 1, "shape error, ask shuheng"
+        # n_params = len(bundle_params)
+
+        # bundle_params = torch.stack(bundle_params, dim=1)
+        # bundle_params = bundle_params.reshape(1, -1, n_params)
+
+        # uu, bb = torch.broadcast_tensors(u, bundle_params)
+        # uu = uu[:, :, 0].reshape(-1)
+        # bb = [bb[:, :, i].reshape(-1) for i in range(n_params)]
+
+        #return uu, *bb
+
+        return u, S, T
 
 class minmaxScaler():
   def __init__(self, x):
@@ -187,6 +232,38 @@ class CustomBundleSolver1D(BundleSolver1D):
         super().__init__( *args, **kwargs)
         self.metrics_history['r2_loss'] = []
         self.metrics_history['phi_max'] = []
+    
+    def get_solution(self, copy=True, best=True):
+    # Choose which networks to use. In the original, the default method has copy, best = True but now we can actually choose
+        if best:
+            networks = self.best_nets  # Use best networks found during training
+        else:
+            networks = self.nets       # Use current networks
+        
+    # Get networks, optionally making copies
+        if copy:
+            net_a = deepcopy(networks[0])
+            net_b = deepcopy(networks[1])
+        else:
+            net_a = networks[0]
+            net_b = networks[1]
+
+        def solution(u, Sigma_h, Va_h, to_numpy=True):
+            with torch.no_grad():
+                # Convert boundary values to S, T for net_a input
+                S = (Sigma_h * np.pi) ** 3
+                T = -Va_h / (4 * np.pi)
+                
+                # Get solutions from networks
+                Sigma, A, nu_Sigma, nu_A = net_a(torch.cat([u, S, T], dim=1))
+                phi, nu_phi = net_b(torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1))
+                
+                if to_numpy:
+                    return (nu_Sigma.numpy(), nu_A.numpy(), nu_phi.numpy(),
+                           Sigma.numpy(), A.numpy(), phi.numpy())
+                return nu_Sigma, nu_A, nu_phi, Sigma, A, phi
+
+        return solution
 
     def _set_loss_fn(self, criterion):
         pass
@@ -194,20 +271,26 @@ class CustomBundleSolver1D(BundleSolver1D):
     def loss_fn(self,r,f,x):
         
         loss_r2 = (r**2).mean() 
-        self.metrics_history['r2_loss'].append((r**2).mean().detach().item())
-        self.metrics_history['phi_max'].append(f[5][-49: ].mean().detach().item())
+        self.metrics_history['r2_loss'].append(loss_r2.detach().item())
+
+        phi = f[1][1]  # Second output from NetB is phi
+        self.metrics_history['phi_max'].append(phi[-49: ].mean().detach().item())
         return loss_r2
 
     def _update_best(self, key):
-        """Update ``self.lowest_loss`` and ``self.best_nets``
+        """Update best networks based on current loss.  
+        Update ``self.lowest_loss`` and ``self.best_nets``
         if current training/validation loss is lower than ``self.lowest_loss``
         """
         current_loss = self.metrics_history['r2_loss'][-1]
         if (self.lowest_loss is None) or current_loss < self.lowest_loss:
             self.lowest_loss = current_loss
-            self.best_nets = deepcopy(self.nets)
+            self.best_nets = [
+                deepcopy(self.nets[0]),  # NetA
+                deepcopy(self.nets[1])   # NetB
+            ]
 
-    def fit(self, max_epochs, callbacks=(), tqdm_file='default', **kwargs):
+    def fit(self, max_epochs, callbacks=(), tqdm_file='default', **kwargs): # The actual training 
         r"""Run multiple epochs of training and validation, update best loss at the end of each epoch.
 
         If ``callbacks`` is passed, callbacks are run, one at a time,
@@ -339,7 +422,14 @@ for i in range(len(S_yago)):
 class NNholo():
 
     def __init__(self, data_path, saving_path,sampling_method ,init_pt_curve = 55, delta = 0.0, curriculum = 1.0):
-
+        """
+        Initializes the NN model.
+        - data_path: Path to input data
+        - saving_path: Where to save results
+        - init_pt_curve: Starting point for curve fitting 
+        - delta: Parameter for boundary condition
+        - curriculum: Parameter for training curriculum
+        """
         self.delta = delta
         self.curriculum = curriculum
         self.path = saving_path
@@ -366,42 +456,69 @@ class NNholo():
         S_true_4= torch.tensor(df_data[201::30,1])
         T_true_4= torch.tensor(df_data[201::30,0])
 
-        S_true_lowest = torch.tensor([0])
-        T_true_lowest = torch.tensor([0])
+        # S_true_lowest = torch.tensor([0])
+        # T_true_lowest = torch.tensor([0])
 
-        self.S_true=torch.cat([S_true_1, S_true_3, S_true_4, S_true_lowest],dim=0)
-        self.T_true=torch.cat([T_true_1, T_true_3, T_true_4, T_true_lowest],dim=0)
+        self.S_true=torch.cat([S_true_1, S_true_3, S_true_4],dim=0)
+        self.T_true=torch.cat([T_true_1, T_true_3, T_true_4],dim=0)
         
         self.Sigma_uh_all = (self.S_true/np.pi)**(1/3)
         self.Va_uh_all = (-self.T_true*4*np.pi)
+        
+        n_points = len(self.S_true)   
 
-
-        self.pg = PredefinedGenerator(self.Sigma_uh_all, self.Va_uh_all)
-        self.g1 = Generator1D(48, 0, self.curriculum, method='chebyshev2')
-        self.g2 = Generator1D(16, 0, 1, method='equally-spaced')
+        self.pg = PredefinedGenerator(self.Sigma_uh_all, self.Va_uh_all) # u_0 and u_1, respectively
+        self.g1 = Generator1D(n_points, 0, self.curriculum, method='chebyshev2') # This is u = [0, 1] with ORIGINALLY 48 points. More points close to 0 and 1 (both boundaries)
+        self.g2 = Generator1D(n_points, 0, 1, method='equally-spaced') # ORIGINALLY 16
         self.train_generator =  MeshGenerator(self.g1, self.pg)
         self.valid_generator =  MeshGenerator(self.g2, self.pg)
-        
-        self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1)
-        
-        self.conditions = [
-    NoCondition(),  # no condition on Vs
-    BundleIVP(1, None, bundle_param_lookup=dict(u_0=1)), #condition on Va = -4 pi T
-    BundleIVP(0, 1),   # Vphi(0) ==1
-    BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
-    BundleDirichletBVP(0, 1, 1, 0),   # A (0) == 1  A(1)=0
-    BundleIVP(0, 0),  #phi(0)=0 #BundleDirichletBVP(0, 0,1, phi_yago[-1])#
 
-]
-        self.nets = [FCNN(n_input_units=3, hidden_units=[32,32,32]) for _ in range(6)]
+        # Net A: handles metric variables (Sigma, A, nu_Sigma, nu_A)
+        self.net_a = FCNN(n_input_units=3, 
+                          hidden_units=[32,32,32], 
+                          n_output_units=4)  # inputs: u,S,T; outputs: Sigma,A,nu_Sigma,nu_A
+
+        # Net B: handles scalar field variables (phi, nu_phi)
+        self.net_b = FCNN(n_input_units=3, # Need (u, S, T) too here! 
+                          hidden_units=[32,32,32], 
+                          n_output_units=2)  # inputs: u,Sigma,A,nu_Sigma,nu_A; outputs: phi,nu_phi
+
+        self.nets = [self.net_a, self.net_b]
+        
+        # Defines the custom NN for the potential V. It takes 1 input (phi) and outputs 1 value (V(phi)), and has 4 hidden layers with 16 units each.  
+        self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1) 
+        
+                # Modify conditions for new structure
+        self.conditions = [
+            BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # For Sigma
+            BundleDirichletBVP(0, 1, 1, 0),   # For A
+            BundleIVP(0, 0)    # For phi
+            ]
+    #     self.conditions = [
+    # NoCondition(),  # no condition on Vs
+    # BundleIVP(1, None, bundle_param_lookup=dict(u_0=1)), #condition on Va = -4 pi T
+    # BundleIVP(0, 1),   # Vphi(0) ==1
+    # BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
+    # BundleDirichletBVP(0, 1, 1, 0),   # A (0) == 1  A(1)=0
+    # BundleIVP(0, 0),  #phi(0)=0 #BundleDirichletBVP(0, 0,1, phi_yago[-1])#
+    # ]       
+        # Creating a list of 6 fully connected NNs for A, sigma, phi and their derivatives wrt u, respectively. 
+        # Each of these networks has 3 input units and 3 hidden layers with 32 units each 
+        #self.nets = [FCNN(n_input_units=3, hidden_units=[32,32,32]) for _ in range(6)] 
         
       #  self.adam = torch.optim.Adam(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
         #                lr=1e-3)#,  betas=(0.9, 0.99))
-        self.adam = torch.optim.Adam(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
-                        lr=1e-3)#,  betas=(0.9, 0.99))
+        # self.adam = torch.optim.Adam(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
+        #                 lr=1e-3)#,  betas=(0.9, 0.99))
         
-        self.lbfgs = torch.optim.LBFGS(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
-                        lr=1e-2)
+        # self.lbfgs = torch.optim.LBFGS(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
+        #                 lr=1e-2)
+        
+        self.adam = torch.optim.Adam(OrderedSet([p for net in [self.net_a, self.net_b, self.V] for p in net.parameters()]), \
+                    lr=1e-3)#,  betas=(0.9, 0.99))
+
+        self.lbfgs = torch.optim.LBFGS(OrderedSet([p for net in [self.net_a, self.net_b, self.V] for p in net.parameters()]), \
+                    lr=1e-2)
         
         self.solver = CustomBundleSolver1D( ode_system=self.equations,
                                             conditions=self.conditions,
@@ -410,13 +527,20 @@ class NNholo():
                                             train_generator=self.train_generator,
                                             valid_generator=self.valid_generator,
                                             optimizer=self.adam,
-                                            nets=self.nets,
+                                            nets=[self.net_a, self.net_b],
                                             n_batches_valid=0,
                                             eq_param_index=(),
                                             V = self.V
                                         )
     def sofT_curve(self):
-        
+        """
+        Plots the S vs T curve from the data and key metrics.
+        Creates visualizations showing:
+        - S vs T relationship
+        - S/T^3 vs T 
+        - Va vs Sigma plots
+        """    
+
         print('S_min: ', min(self.S_true))
         print('Length of input s(T) curve: ',  self.S_true.shape)
 
@@ -455,8 +579,13 @@ class NNholo():
         fig.savefig(f'{self.path}/sofT.png')
         
     def update_generator(self, curriculum = 1.0, valid_method = 'equally-spaced'):
+        """
+        Updates the data generators used for training/validation.
+        - curriculum: Controls difficulty of training samples
+        - valid_method: How validation points are spaced
+        """
 
-        g1 = Generator1D(128, 0, curriculum, method='chebyshev2')
+        g1 = Generator1D(128, 0, curriculum, method='chebyshev2') # HOW DOES GENERATOR1D WORK?
         g2 = Generator1D(16, 0, 1.0, method=valid_method)
         train_generator =  MeshGenerator(g1, self.pg)
         valid_generator =  MeshGenerator(g2, self.pg)
@@ -481,34 +610,64 @@ class NNholo():
 
         self.solver.generator={'train': train_generator, 'valid': valid_generator}
     
-    def equations(self, Vs, Va, Vp, Sigma, A, phi, u):
+    #def equations(self, Vs, Va, Vp, Sigma, A, phi, u):
+    def equations(self, u, S, T):
 
-        # create the derivative of the V wrt to phi
-        VF = diff(self.V(phi), phi, shape_check= False)
+        """
+        Defines the system of differential equations to be solved.
+        Takes outputs from neural networks and returns residuals of equations.
+        Returns 7 equations that define the physical system.
+        """
+        # Reshape tensors into 2D tensors with one column and however many rows are needed. 
+        # The -1 specifies an unknown dimension (i.e. take whole tensor and put into one column)
+
+            # If called with a single *args tuple of all parameters, unpack them
+        if isinstance(u, tuple):
+            u, S, T = u[:3]  # Take first three arguments
+    
+    # Ensure inputs are properly shaped
+        u = u.reshape(-1, 1) if not isinstance(u, torch.Size) else u
+        S = S.reshape(-1, 1) if not isinstance(S, torch.Size) else S
+        T = T.reshape(-1, 1) if not isinstance(T, torch.Size) else T
+        # u = u.reshape(-1, 1)
+        # S = S.reshape(-1, 1)
+        # T = T.reshape(-1, 1)
+
+        print(u, S, T)
 
         ORIGP_FLAG = 0
 
-        # the equations
-        eq1 = Vs - diff(Sigma, u, order=1)
-        eq2 = Va - diff(A, u, order=1)
-        eq3 = Vp - diff(phi, u, order=1)
-        eq4 = diff(Vs, u,  order=1) + (2 / 3) *Sigma * Vp ** 2
+        # Get outputs from NetA
+        input_tensor = torch.cat([u, S, T], dim=1)  # Shape: (batch_size, 3)
+        Sigma, A, nu_Sigma, nu_A = self.net_a(input_tensor).chunk(4, dim=1) # Splits a tensor into n chunks along a specified dimension, now shape (batch_size, 1)
+        
+        # Get outputs from NetB using NetA's outputs
+        phi, nu_phi = self.net_b(input_tensor).chunk(2, dim=1)
+        
+        #Sigma, A, nu_Sigma, nu_A = self.net_a(torch.cat([u, S, T], dim=1))
+        #phi, nu_phi = self.net_b(torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1))
 
-        eq5 = (u ** 2) * Sigma * diff(Va, u, order=1) + 8 / (3) * ( (1-ORIGP_FLAG)* self.V(phi)  \
-                                    + ORIGP_FLAG* V_or(phi) ) * Sigma  \
-                                    + Va * (3 * u ** 2 * Vs - 5 * Sigma * u) \
-                                    + A * (8 * Sigma - 6 * u * Vs)
+        # Get potential from V net
+        V = self.V(phi)
+        # create the derivative of the V wrt to phi with the custom NN
+        VF = diff(self.V(phi), phi, shape_check= False)
 
+        # Compute the equation residuals
+        eq1 = nu_Sigma - diff(Sigma, u)
+        eq2 = nu_A - diff(A, u)
+        eq3 = nu_phi - diff(phi, u)
+        eq4 = diff(nu_Sigma, u) + (2/3) * Sigma * nu_phi**2
+    
+        eq5 = (u**2) * Sigma * diff(nu_A, u) + (8/3) * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)) * Sigma + \
+          nu_A * (3 * u**2 * nu_Sigma - 5 * Sigma * u) + \
+          A * (8 * Sigma - 6 * u * nu_Sigma)
 
+        eq6 = u**2 * Sigma * A * diff(nu_phi, u) - Sigma * ((1-ORIGP_FLAG) * VF + ORIGP_FLAG * DV_or(phi)) + \
+          nu_phi * (-3 * u * A * Sigma + u**2 * Sigma * nu_A + 3 * u**2 * nu_Sigma * A)
 
-        eq6 = u ** 2 * Sigma * A * diff(Vp, u, order=1) - Sigma * (  (1-ORIGP_FLAG)*VF + ORIGP_FLAG* DV_or(phi)) \
-            + Vp * (-3 * u * A * Sigma + u ** 2 * Sigma * Va + 3 * u ** 2 * A * Vs)
-
-
-        eq7 =  (u * Vs-Sigma) * \
-            ( u**2 * Sigma * Va + 2 * A * u**2 * Vs- 4 * u * A * Sigma) \
-            -(2/3)*(u*Sigma**2)*(u**2 * A* Vp**2 - \
-                                2 * ((1-ORIGP_FLAG)*self.V(phi) + ORIGP_FLAG*V_or(phi)))
+        eq7 = (u * nu_Sigma - Sigma) * \
+          (u**2 * Sigma * nu_A + 2 * A * u**2 * nu_Sigma - 4 * u * A * Sigma) - \
+          (2/3) * (u * Sigma**2) * (u**2 * A * nu_phi**2 - 2 * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)))
 
         return [eq1, eq2, eq3, eq4 , eq5, eq6, eq7]
     
@@ -600,6 +759,12 @@ class NNholo():
         fig1.savefig(f'{self.path}/loss_epoch {trained_epochs}_prettier.pdf')
 
     def plot_potential(self, phim, save_fig = True, best = False):
+        """
+        Plots the learned potential V(phi) against theoretical values.
+        - phim: Parameter for theoretical potential
+        - save_fig: Whether to save the plot
+        - best: Whether to use best or current model
+        """
         
         trained_epochs = len(self.solver.metrics_history['train_loss'])
         
@@ -616,7 +781,7 @@ class NNholo():
             Va_v = (-T*4*np.pi)
             Sigma_uh = Sigma_v.cpu().detach().numpy()*np.ones_like(u)
             Va_uh = Va_v.cpu().detach().numpy()*np.ones_like(u)
-            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_uh,  Va_uh, to_numpy=True)
+            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_uh,  Va_uh, to_numpy=True) # Get solutions from networks
             phi_h[i] = phi.max()
             true_phi_h[i] = phi[-1]
             i_max = phi.argmax()
@@ -634,7 +799,7 @@ class NNholo():
         #Vv = potential_cb.best_potential(phi) #potential_cb.best_potential(phi)
         #DVv = diff(potential_cb.best_potential(phi), phi, shape_check= False)
         #DDVv = diff(potential_cb.best_potential(phi), phi, order=2, shape_check= False)
-        Vv = self.V(phi)
+        Vv = self.V(phi) # Use V network
         #print(Vv)
         potentialVphi=pd.DataFrame(phi.cpu().detach().numpy())
         potentialVVv=pd.DataFrame(Vv.cpu().detach().numpy())
@@ -779,6 +944,7 @@ class NNholo():
 
         
     def compare_to_yago(self, fontsize = 14, legend_fontsize=14, n_fontsize=14, wspace=0.5, yago_linewidth = 3, yago_style = '--'):
+        solution = self.solver.get_solution(best=True)
         
         for i in range(3):
             
@@ -801,9 +967,9 @@ class NNholo():
             #Sigma_h = .78*np.ones_like(u)
             #Va_h = -10.0*np.ones_like(u)
 
-            solution = self.solver.get_solution(best=True)
+            Sigma, A, phi, nu_Sigma, nu_A, nu_phi = solution(u, Sigma_h, Va_h)
 
-            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_h,  Va_h, to_numpy=True)
+            #Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_h,  Va_h, to_numpy=True)
 
             print('Point %i' %pt, '; phi_h_yago = %f' %phi_uh_yago[pt-1])
 
@@ -982,12 +1148,15 @@ class NNholo():
         with open(path, 'rb') as file:
             data = dill.load(file)
         os.remove(path)
-        try:
-            data['V_best'] = self.solver.callbacks[0].best_potential.state_dict()
-            data['V_latest'] = self.V.state_dict()
+        data['net_a'] = self.net_a.state_dict()
+        data['net_b'] = self.net_b.state_dict()
+        data['V'] = self.V.state_dict()
+        # try:
+        #     data['V_best'] = self.solver.callbacks[0].best_potential.state_dict()
+        #     data['V_latest'] = self.V.state_dict()
 
-        except:
-            data['V_latest'] = self.V.state_dict()
+        # except:
+        #     data['V_latest'] = self.V.state_dict()
         with open(path, 'wb') as file:
             dill.dump(data, file)
 
@@ -1027,7 +1196,7 @@ class NNholo():
                                             train_generator=train_generator,
                                             valid_generator=valid_generator,
                                             optimizer=optimizer,
-                                            nets=nets,
+                                            nets=[self.net_a, self.net_b],
                                             n_batches_valid=0,
                                             eq_param_index=(),
                                             V = self.V

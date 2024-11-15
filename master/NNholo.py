@@ -158,6 +158,9 @@ class MeshGenerator(BaseGenerator):
         if isinstance(bundle_params, torch.Tensor):
             bundle_params = (bundle_params,)
 
+        print("u shape:", u.shape)
+        print("bundle_params shapes:", [p.shape for p in bundle_params])
+
         # Stack and reshape
         bundle_params = torch.stack(bundle_params, dim=1)
         
@@ -233,37 +236,77 @@ class CustomBundleSolver1D(BundleSolver1D):
         self.metrics_history['r2_loss'] = []
         self.metrics_history['phi_max'] = []
     
-    def get_solution(self, copy=True, best=True):
-    # Choose which networks to use. In the original, the default method has copy, best = True but now we can actually choose
-        if best:
-            networks = self.best_nets  # Use best networks found during training
-        else:
-            networks = self.nets       # Use current networks
+    # def compute_func_val(self, net_idx, condition, u, Sigma_h, Va_h):
+    #     """
+    #     Compute function values from network outputs
+    #     net_idx: index of the network (0 for metric net, 1 for scalar field net)
+    #     """
+    #     if net_idx == 0:  # Metric network
+    #         # Input: u, S, T
+    #         inputs = torch.cat([u.reshape(-1, 1), 
+    #                           Sigma_h.reshape(-1, 1), 
+    #                           Va_h.reshape(-1, 1)], dim=1)
+    #         outputs = self.nets[0](inputs)
+    #         Sigma, A, nu_Sigma, nu_A = outputs.chunk(4, dim=1)
+            
+    #         # Return appropriate value based on which variable is being requested
+    #         if condition.order == 0:  # If we want the function value
+    #             if condition.var_idx == 0:  # Sigma
+    #                 return Sigma
+    #             elif condition.var_idx == 1:  # A
+    #                 return A
+    #         else:  # If we want the derivative
+    #             if condition.var_idx == 0:  # nu_Sigma
+    #                 return nu_Sigma
+    #             elif condition.var_idx == 1:  # nu_A
+    #                 return nu_A
+                
+    #     elif net_idx == 1:  # Scalar field network
+    #         # Input: u, S, T
+    #         inputs = torch.cat([u.reshape(-1, 1), 
+    #                           Sigma_h.reshape(-1, 1), 
+    #                           Va_h.reshape(-1, 1)], dim=1)
+    #         outputs = self.nets[1](inputs)
+    #         phi, nu_phi = outputs.chunk(2, dim=1)
+            
+    #         # Return appropriate value based on what's being requested
+    #         if condition.order == 0:  # Function value
+    #             return phi
+    #         else:  # Derivative
+    #             return nu_phi
+
+    
+    # def get_solution(self, copy=True, best=True):
+    # # Choose which networks to use. In the original, the default method has copy, best = True but now we can actually choose
+    #     if best:
+    #         networks = self.best_nets  # Use best networks found during training
+    #     else:
+    #         networks = self.nets       # Use current networks
         
-    # Get networks, optionally making copies
-        if copy:
-            net_a = deepcopy(networks[0])
-            net_b = deepcopy(networks[1])
-        else:
-            net_a = networks[0]
-            net_b = networks[1]
+    # # Get networks, optionally making copies
+    #     if copy:
+    #         net_a = deepcopy(networks[0])
+    #         net_b = deepcopy(networks[1])
+    #     else:
+    #         net_a = networks[0]
+    #         net_b = networks[1]
 
-        def solution(u, Sigma_h, Va_h, to_numpy=True):
-            with torch.no_grad():
-                # Convert boundary values to S, T for net_a input
-                S = (Sigma_h * np.pi) ** 3
-                T = -Va_h / (4 * np.pi)
+    #     def solution(u, Sigma_h, Va_h, to_numpy=True):
+    #         with torch.no_grad():
+    #             # Convert boundary values to S, T for net_a input
+    #             S = (Sigma_h * np.pi) ** 3
+    #             T = -Va_h / (4 * np.pi)
                 
-                # Get solutions from networks
-                Sigma, A, nu_Sigma, nu_A = net_a(torch.cat([u, S, T], dim=1))
-                phi, nu_phi = net_b(torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1))
+    #             # Get solutions from networks
+    #             Sigma, A, nu_Sigma, nu_A = net_a(torch.cat([u, S, T], dim=1))
+    #             phi, nu_phi = net_b(torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1))
                 
-                if to_numpy:
-                    return (nu_Sigma.numpy(), nu_A.numpy(), nu_phi.numpy(),
-                           Sigma.numpy(), A.numpy(), phi.numpy())
-                return nu_Sigma, nu_A, nu_phi, Sigma, A, phi
+    #             if to_numpy:
+    #                 return (nu_Sigma.numpy(), nu_A.numpy(), nu_phi.numpy(),
+    #                        Sigma.numpy(), A.numpy(), phi.numpy())
+    #             return nu_Sigma, nu_A, nu_phi, Sigma, A, phi
 
-        return solution
+    #     return solution
 
     def _set_loss_fn(self, criterion):
         pass
@@ -272,9 +315,7 @@ class CustomBundleSolver1D(BundleSolver1D):
         
         loss_r2 = (r**2).mean() 
         self.metrics_history['r2_loss'].append(loss_r2.detach().item())
-
-        phi = f[1][1]  # Second output from NetB is phi
-        self.metrics_history['phi_max'].append(phi[-49: ].mean().detach().item())
+        self.metrics_history['phi_max'].append(f[5][-49:].mean().detach().item())
         return loss_r2
 
     def _update_best(self, key):
@@ -285,10 +326,7 @@ class CustomBundleSolver1D(BundleSolver1D):
         current_loss = self.metrics_history['r2_loss'][-1]
         if (self.lowest_loss is None) or current_loss < self.lowest_loss:
             self.lowest_loss = current_loss
-            self.best_nets = [
-                deepcopy(self.nets[0]),  # NetA
-                deepcopy(self.nets[1])   # NetB
-            ]
+            self.best_nets = deepcopy(self.nets)
 
     def fit(self, max_epochs, callbacks=(), tqdm_file='default', **kwargs): # The actual training 
         r"""Run multiple epochs of training and validation, update best loss at the end of each epoch.
@@ -473,27 +511,59 @@ class NNholo():
         self.train_generator =  MeshGenerator(self.g1, self.pg)
         self.valid_generator =  MeshGenerator(self.g2, self.pg)
 
-        # Net A: handles metric variables (Sigma, A, nu_Sigma, nu_A)
-        self.net_a = FCNN(n_input_units=3, 
-                          hidden_units=[32,32,32], 
-                          n_output_units=4)  # inputs: u,S,T; outputs: Sigma,A,nu_Sigma,nu_A
-
-        # Net B: handles scalar field variables (phi, nu_phi)
-        self.net_b = FCNN(n_input_units=3, # Need (u, S, T) too here! 
-                          hidden_units=[32,32,32], 
-                          n_output_units=2)  # inputs: u,Sigma,A,nu_Sigma,nu_A; outputs: phi,nu_phi
+        self.net_a = FCNN(n_input_units=3, hidden_units=[32,32,32], n_output_units=4) # Network A for Sigma, A, nu_Sigma, nu_A. Inputs: u,S,T.
+        self.net_b = FCNN(n_input_units=3, hidden_units=[32,32,32], n_output_units=2) # Network B for phi, nu_phi. Inputs: u,S,T.
 
         self.nets = [self.net_a, self.net_b]
         
         # Defines the custom NN for the potential V. It takes 1 input (phi) and outputs 1 value (V(phi)), and has 4 hidden layers with 16 units each.  
-        self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1) 
+        self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1)
+
+        # Update nets list to have 6 "virtual" networks that map to our 2 actual networks
+        class MetricNet(nn.Module):
+            def __init__(self, net_a, output_idx):
+                super().__init__()
+                self.net_a = net_a
+                self.output_idx = output_idx
+    
+            def forward(self, u, S, T):
+                outputs = self.net_a(torch.cat([u, S, T], dim=1))
+                return outputs[:, self.output_idx:self.output_idx+1]
+
+        class ScalarNet(nn.Module):
+            def __init__(self, net_b, output_idx):
+                super().__init__()
+                self.net_b = net_b
+                self.output_idx = output_idx
+    
+            def forward(self, u, S, T):
+                outputs = self.net_b(torch.cat([u, S, T], dim=1))
+                return outputs[:, self.output_idx:self.output_idx+1]
+
+# Create the 6 virtual networks that map to components of net_a and net_b
+        self.nets = [
+            MetricNet(self.net_a, 2),  # nu_Sigma (Vs)
+            MetricNet(self.net_a, 3),  # nu_A (Va)
+            ScalarNet(self.net_b, 1),  # nu_phi (Vp)
+            MetricNet(self.net_a, 0),  # Sigma
+            MetricNet(self.net_a, 1),  # A
+            ScalarNet(self.net_b, 0),  # phi
+        ]
         
                 # Modify conditions for new structure
+        # self.conditions = [
+        #     BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # For Sigma
+        #     BundleDirichletBVP(0, 1, 1, 0),   # For A
+        #     BundleIVP(0, 0)    # For phi
+        #     ]
         self.conditions = [
-            BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # For Sigma
-            BundleDirichletBVP(0, 1, 1, 0),   # For A
-            BundleIVP(0, 0)    # For phi
-            ]
+            NoCondition(),  # no condition on Vs
+            NoCondition(),  # no condition on Va
+            NoCondition(),  # no condition on Vp
+            BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
+            BundleDirichletBVP(0, 1, 1, 0),   # A(0) = 1, A(1) = 0
+            BundleIVP(0, 0),  # phi(0) = 0
+        ]
     #     self.conditions = [
     # NoCondition(),  # no condition on Vs
     # BundleIVP(1, None, bundle_param_lookup=dict(u_0=1)), #condition on Va = -4 pi T
@@ -527,7 +597,7 @@ class NNholo():
                                             train_generator=self.train_generator,
                                             valid_generator=self.valid_generator,
                                             optimizer=self.adam,
-                                            nets=[self.net_a, self.net_b],
+                                            nets=self.nets,
                                             n_batches_valid=0,
                                             eq_param_index=(),
                                             V = self.V
@@ -610,64 +680,101 @@ class NNholo():
 
         self.solver.generator={'train': train_generator, 'valid': valid_generator}
     
-    #def equations(self, Vs, Va, Vp, Sigma, A, phi, u):
-    def equations(self, u, S, T):
+    def equations(self, Vs, Va, Vp, Sigma, A, phi, u):
 
         """
         Defines the system of differential equations to be solved.
         Takes outputs from neural networks and returns residuals of equations.
         Returns 7 equations that define the physical system.
+
         """
+            # Get outputs from Network A (metric-related)
+    #     net_A = self.nets[0]  # First FCNN
+    #     metric_outputs = net_A(torch.cat([u.reshape(-1,1), 
+    #                                        self.S_true.reshape(-1,1), 
+    #                                        self.T_true.reshape(-1,1)], dim=1))  
+    # # Split into 4 outputs: Sigma, A, nu_Sigma, nu_A
+    #     Sigma, A, nu_Sigma, nu_A = metric_outputs.chunk(4, dim=1)
+
+    # # Get outputs from Network B (scalar field)
+    #     net_B = self.nets[1]  # Second FCNN
+    #     field_outputs = net_B(torch.cat([u.reshape(-1,1), 
+    #                                     self.S_true.reshape(-1,1), 
+    #                                     self.T_true.reshape(-1,1)], dim=1))
+    #     # Split into 2 outputs: phi and nu_phi
+    #     phi, nu_phi = torch.split(field_outputs, [1,1], dim=1)
         # Reshape tensors into 2D tensors with one column and however many rows are needed. 
         # The -1 specifies an unknown dimension (i.e. take whole tensor and put into one column)
+        # print("Number of arguments:", len(args))
+        # for i, arg in enumerate(args):
+        #     if torch.is_tensor(arg):
+        #         print(f"Arg {i} shape:", arg.shape)
+        #     else:
+        #         print(f"Arg {i} type:", type(arg))
+        
+        # if len(args) > 3:
+        # # If we get more arguments than needed, get u from position 3 
+        # # and extract S, T from the last argument (parameters)
+        #     u = args[3]
+        #     params = args[-1]
+        #     S = params[:, 0:1]
+        #     T = params[:, 1:2]
+        # else:
+        # # If we get exactly what we need
+        #     u, S, T = args[:3]
+        # print("After extraction:")
+        # print("u shape:", u.shape)
+        # print("S shape:", S.shape)
+        # print("T shape:", T.shape)
 
             # If called with a single *args tuple of all parameters, unpack them
-        if isinstance(u, tuple):
-            u, S, T = u[:3]  # Take first three arguments
+        # if isinstance(u, tuple):
+        #     u, S, T = u[:3]  # Take first three arguments
     
-    # Ensure inputs are properly shaped
-        u = u.reshape(-1, 1) if not isinstance(u, torch.Size) else u
-        S = S.reshape(-1, 1) if not isinstance(S, torch.Size) else S
-        T = T.reshape(-1, 1) if not isinstance(T, torch.Size) else T
-        # u = u.reshape(-1, 1)
-        # S = S.reshape(-1, 1)
-        # T = T.reshape(-1, 1)
+    # # Ensure inputs are properly shaped
+    #     u = u.reshape(-1, 1) if not isinstance(u, torch.Size) else u
+    #     S = S.reshape(-1, 1) if not isinstance(S, torch.Size) else S
+    #     T = T.reshape(-1, 1) if not isinstance(T, torch.Size) else T
+    #     # u = u.reshape(-1, 1)
+    #     # S = S.reshape(-1, 1)
+    #     # T = T.reshape(-1, 1)
 
-        print(u, S, T)
+    #     print(u, S, T)
 
         ORIGP_FLAG = 0
 
         # Get outputs from NetA
-        input_tensor = torch.cat([u, S, T], dim=1)  # Shape: (batch_size, 3)
-        Sigma, A, nu_Sigma, nu_A = self.net_a(input_tensor).chunk(4, dim=1) # Splits a tensor into n chunks along a specified dimension, now shape (batch_size, 1)
+        # input_tensor = torch.cat([u, S, T], dim=1)  # Shape: (batch_size, 3)
+        # Sigma, A, nu_Sigma, nu_A = self.net_a(input_tensor).chunk(4, dim=1) # Splits a tensor into n chunks along a specified dimension, now shape (batch_size, 1)
         
-        # Get outputs from NetB using NetA's outputs
-        phi, nu_phi = self.net_b(input_tensor).chunk(2, dim=1)
+        # # Get outputs from NetB using NetA's outputs
+        # phi, nu_phi = self.net_b(input_tensor).chunk(2, dim=1)
         
         #Sigma, A, nu_Sigma, nu_A = self.net_a(torch.cat([u, S, T], dim=1))
         #phi, nu_phi = self.net_b(torch.cat([u, Sigma, A, nu_Sigma, nu_A], dim=1))
 
-        # Get potential from V net
-        V = self.V(phi)
         # create the derivative of the V wrt to phi with the custom NN
-        VF = diff(self.V(phi), phi, shape_check= False)
-
-        # Compute the equation residuals
-        eq1 = nu_Sigma - diff(Sigma, u)
-        eq2 = nu_A - diff(A, u)
-        eq3 = nu_phi - diff(phi, u)
-        eq4 = diff(nu_Sigma, u) + (2/3) * Sigma * nu_phi**2
     
-        eq5 = (u**2) * Sigma * diff(nu_A, u) + (8/3) * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)) * Sigma + \
-          nu_A * (3 * u**2 * nu_Sigma - 5 * Sigma * u) + \
-          A * (8 * Sigma - 6 * u * nu_Sigma)
+    # create the derivative of the V wrt to phi
+        VF = diff(self.V(phi), phi, shape_check=False)
 
-        eq6 = u**2 * Sigma * A * diff(nu_phi, u) - Sigma * ((1-ORIGP_FLAG) * VF + ORIGP_FLAG * DV_or(phi)) + \
-          nu_phi * (-3 * u * A * Sigma + u**2 * Sigma * nu_A + 3 * u**2 * nu_Sigma * A)
+        # The equations use the input arguments directly
+        eq1 = Vs - diff(Sigma, u, order=1)
+        eq2 = Va - diff(A, u, order=1)
+        eq3 = Vp - diff(phi, u, order=1)
+        eq4 = diff(Vs, u, order=1) + (2 / 3) * Sigma * Vp ** 2
 
-        eq7 = (u * nu_Sigma - Sigma) * \
-          (u**2 * Sigma * nu_A + 2 * A * u**2 * nu_Sigma - 4 * u * A * Sigma) - \
-          (2/3) * (u * Sigma**2) * (u**2 * A * nu_phi**2 - 2 * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)))
+        eq5 = (u ** 2) * Sigma * diff(Va, u, order=1) + 8 / 3 * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)) * Sigma + \
+          Va * (3 * u ** 2 * Vs - 5 * Sigma * u) + \
+          A * (8 * Sigma - 6 * u * Vs)
+
+        eq6 = u ** 2 * Sigma * A * diff(Vp, u, order=1) - Sigma * ((1-ORIGP_FLAG) * VF + ORIGP_FLAG * DV_or(phi)) + \
+          Vp * (-3 * u * A * Sigma + u ** 2 * Sigma * Va + 3 * u ** 2 * A * Vs)
+
+        eq7 = (u * Vs - Sigma) * \
+          (u ** 2 * Sigma * Va + 2 * A * u ** 2 * Vs - 4 * u * A * Sigma) - \
+          (2/3) * (u * Sigma ** 2) * (u ** 2 * A * Vp ** 2 - 2 * ((1-ORIGP_FLAG) * self.V(phi) + ORIGP_FLAG * V_or(phi)))
+
 
         return [eq1, eq2, eq3, eq4 , eq5, eq6, eq7]
     
@@ -682,6 +789,25 @@ class NNholo():
 
         else:
             return self.solver.loss_fn(residuals, funcs, batch) + self.solver.additional_loss(residuals, funcs, batch).detach().numpy()
+        
+    def plot_results(self):
+        u = np.linspace(0.0001, 1, 100)
+        solution = self.solver.get_solution(best=True)
+        
+        for S, T in zip(self.S_true, self.T_true):
+            # Convert to boundary conditions
+            Sigma_h = (S/np.pi)**(1/3) * np.ones_like(u)
+            Va_h = (-T*4*np.pi) * np.ones_like(u)
+            
+            # Get all variables - internally this uses both networks
+            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_h, Va_h, to_numpy=True)
+            
+            # Plot results
+            plt.plot(u, Sigma, label='Σ')
+            plt.plot(u, A, label='A')
+            plt.plot(u, phi, label='φ')
+            plt.legend()
+            plt.show()
         
     def get_residuals(self, display = False):
         

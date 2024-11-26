@@ -115,18 +115,15 @@ class CustomNN(nn.Module):
         return x
     
 class MeshGenerator(BaseGenerator):
-
     def __init__(self, g1, pg):
-
         super(MeshGenerator, self).__init__()
         self.g1 = g1
         self.pg = pg
-
+    
     def get_examples(self):
-
+    
         u = self.g1.get_examples()
         u = u.reshape(-1, 1, 1)
-
         bundle_params = self.pg.get_examples()
         if isinstance(bundle_params, torch.Tensor):
             bundle_params = (bundle_params,)
@@ -142,13 +139,42 @@ class MeshGenerator(BaseGenerator):
 
         return uu, *bb
 
-class minmaxScaler():
-  def __init__(self, x):
-    self.minx = x.min().detach().item()
-    self.maxx = x.max().detach().item()
 
-  def transform(self, x):
-    return (x - self.minx)/(self.maxx - self.minx)
+    # def get_examples(self):
+    # 	u = self.g1.get_examples()
+    # 	print(u)
+    # 	#u = u.reshape(-1)  # Just make it 1D first
+    # 	print(u.reshape(-1)-u)
+
+        
+    # 	bundle_params = self.pg.get_examples()
+    # 	if isinstance(bundle_params, torch.Tensor):
+    # 		bundle_params = (bundle_params,)
+    # 		print(bundle_params)
+            
+    # 	# Take only the first point from bundle_params
+    # 	Sigma_h = bundle_params[0][0]
+    # 	Va_h = bundle_params[1][0]
+    # 	print(Sigma_h)
+    # 	print(Va_h)
+        
+    # 	# Repeat for each u point
+    # 	Sigma_h = Sigma_h * torch.ones_like(u)
+    # 	Va_h = Va_h * torch.ones_like(u)
+
+    # 	print(Sigma_h)
+    # 	print(Va_h)
+        
+    # 	return u, Sigma_h, Va_h
+    
+
+# class minmaxScaler():
+#   def __init__(self, x):
+# 	self.minx = x.min().detach().item()
+# 	self.maxx = x.max().detach().item()
+
+#   def transform(self, x):
+# 	return (x - self.minx)/(self.maxx - self.minx)
   
 class DoSchedulerStep(ActionCallback):
     def __init__(self, scheduler):
@@ -178,6 +204,18 @@ class Store_MSE_Loss(ActionCallback):
             batch = self.generator['train'].get_examples()
             r = solver.get_residuals(*batch, to_numpy = True)
             self.mse_loss_history.append((np.array(r)**2).mean())
+
+# class Store_MSE_Loss(ActionCallback):
+#     def __init__(self):
+#         super().__init__()
+#         self.mse_loss_history = []
+
+#     def __call__(self, solver):
+#         if solver.global_epoch % 10 == 0:
+#           for i in range(5):
+#             batch = self.generator['train'].get_examples()
+#             r = solver.get_residuals(*batch, to_numpy = True)
+#             self.mse_loss_history.append((np.array(r)**2).mean())
 
 class CustomBundleSolver1D(BundleSolver1D):
     def __init__(self, *args, **kwargs):
@@ -338,6 +376,85 @@ for i in range(len(S_yago)):
 # DEFINE THE WHOLE RUTINE
 class NNholo():
 
+    class MetricNet(nn.Module):
+        def __init__(self, net_a, output_idx):
+            super().__init__()
+            self.net_a = net_a
+            self.output_idx = output_idx
+            self.NN = self.net_a.NN
+                
+
+        def forward(self, input_tensor):
+            print(f"MetricNet forward pass for output {self.output_idx}")
+                # args contains the broadcasted outputs from original MeshGenerator
+            u = input_tensor[:, 0].reshape(-1, 1)
+        
+                # Convert to S, T
+            S = (input_tensor[:, 1] * np.pi) ** 3
+            T = -input_tensor[:, 2] / (4 * np.pi)
+
+            print(S)
+        
+                # Reshape all inputs to [2928, 1]
+            S = S.reshape(-1, 1)
+            T = T.reshape(-1, 1)
+            print(S)
+        
+                # Feed to network
+            print("Network input shape:", torch.cat([u, S, T], dim=1).shape)
+
+            outputs = self.net_a(torch.cat([u, S, T], dim=1))
+
+            print(f"MetricNet output shape before slicing: {outputs.shape}")
+            print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
+            print("Result", outputs[:, self.output_idx:self.output_idx+1])
+                
+            return outputs[:, self.output_idx:self.output_idx+1]
+
+    class ScalarNet(nn.Module):
+        def __init__(self, net_b, output_idx):
+            super().__init__()
+            self.net_b = net_b
+            self.output_idx = output_idx
+            self.NN = self.net_b.NN
+
+        def forward(self, input_tensor):
+
+            print(f"ScalarNet forward pass for output {self.output_idx}")
+        # Same handling as MetricNet
+            u = input_tensor[:, 0].reshape(-1, 1)
+        
+            S = (input_tensor[:, 1] * np.pi) ** 3
+            T = -input_tensor[:, 2] / (4 * np.pi)
+
+            S = S.reshape(-1, 1)
+            T = T.reshape(-1, 1)
+        
+            outputs = self.net_b(torch.cat([u, S, T], dim=1))
+            print(f"ScalarNet output shape before slicing: {outputs.shape}")
+            print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
+            print("Result", outputs[:, self.output_idx:self.output_idx+1])
+            return outputs[:, self.output_idx:self.output_idx+1]	
+
+    def verify_network_usage(self):
+        print("\nVerifying network usage:")
+    
+        # Create a small test batch
+        u = torch.linspace(0, 1, 10).reshape(-1, 1)
+        S = torch.ones(10, 1)
+        T = torch.ones(10, 1)
+        test_input = torch.cat([u, S, T], dim=1)
+    
+        print("\nTesting each network component:")
+        for i, net in enumerate(self.nets):
+            print(f"\nTesting network {i}:")
+            output = net(test_input)
+            if isinstance(net, self.__class__.MetricNet):
+                print(f"MetricNet component {net.output_idx}")
+            else:
+                print(f"ScalarNet component {net.output_idx}")
+            print(f"Output shape: {output.shape}")
+
     def __init__(self, data_path, saving_path,sampling_method ,init_pt_curve = 55, delta = 0.0, curriculum = 1.0):
 
         self.delta = delta
@@ -381,22 +498,96 @@ class NNholo():
         self.g2 = Generator1D(16, 0, 1, method='equally-spaced')
         self.train_generator =  MeshGenerator(self.g1, self.pg)
         self.valid_generator =  MeshGenerator(self.g2, self.pg)
+
+        print(self.train_generator)
         
+        self.net_a = FCNN(n_input_units=3, hidden_units=[32,32,32], n_output_units=4) # Network A for Sigma, A, nu_Sigma, nu_A. Inputs: u,S,T.
+        self.net_b = FCNN(n_input_units=3, hidden_units=[32,32,32], n_output_units=2) # Network B for phi, nu_phi. Inputs: u,S,T.
+
+        print("\nNetwork architecture:")
+        print("Metric Network (net_a):")
+        print(self.net_a)
+        print("\nScalar Network (net_b):")
+        print(self.net_b)
+
+        # Before creating the instance, also add these prints:
+        print("S_true shape:", self.S_true.shape)
+        print("T_true shape:", self.T_true.shape)
+        print("Sigma_uh_all shape:", self.Sigma_uh_all.shape)
+        print("Va_uh_all shape:", self.Va_uh_all.shape)	
+
+#	 Verify network outputs
+        test_input = torch.randn(10, 3)
+        out_a = self.net_a(test_input)
+        out_b = self.net_b(test_input)
+        print(f"\nTest outputs:")
+        print(f"net_a output shape: {out_a.shape}")
+        print(f"net_b output shape: {out_b.shape}")		
+
+
+        # self.nets = [self.net_a, self.net_b]
+        
+        # Defines the custom NN for the potential V. It takes 1 input (phi) and outputs 1 value (V(phi)), and has 4 hidden layers with 16 units each.  
         self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1)
+
+        
+        # Update nets list to have 6 "virtual" networks that map to our 2 actual networks
+        # class MetricNet(nn.Module):
+        #     def __init__(self, net_a, output_idx):
+        #         super().__init__()
+        #         self.net_a = net_a
+        #         self.output_idx = output_idx
+    
+        #     def forward(self):
+        #         outputs = self.net_a(MeshGenerator(self.g1, self.pg), dim=1)
+        #         return outputs[:, self.output_idx:self.output_idx+1]
+
+        # class ScalarNet(nn.Module):
+        #     def __init__(self, net_b, output_idx):
+        #         super().__init__()
+        #         self.net_b = net_b
+        #         self.output_idx = output_idx
+    
+        #     def forward(self, *args):
+        #         u, S, T = args
+        #         outputs = self.net_b(torch.cat([u, S, T], dim=1))
+        #         return outputs[:, self.output_idx:self.output_idx+1]+
+        
+
+        # Create the 6 virtual networks that map to components of net_a and net_b
+        self.nets = [
+            self.__class__.MetricNet(self.net_a, 2),  # nu_Sigma (Vs)
+            self.__class__.MetricNet(self.net_a, 3),  # nu_A (Va)
+            self.__class__.ScalarNet(self.net_b, 1),  # nu_phi (Vp)
+            self.__class__.MetricNet(self.net_a, 0),  # Sigma
+            self.__class__.MetricNet(self.net_a, 1),  # A
+            self.__class__.ScalarNet(self.net_b, 0),  # phi
+        ]
+        
+                # Modify conditions for new structure
+        # self.conditions = [
+        #     BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # For Sigma
+        #     BundleDirichletBVP(0, 1, 1, 0),   # For A
+        #     BundleIVP(0, 0)    # For phi
+        #     ]
+        # self.conditions = [
+        #     NoCondition(),  # no condition on Vs
+        #     NoCondition(),  # no condition on Va
+        #     NoCondition(),  # no condition on Vp
+        #     BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
+        #     BundleDirichletBVP(0, 1, 1, 0),   # A(0) = 1, A(1) = 0
+        #     BundleIVP(0, 0),  # phi(0) = 0
+        # ]
         
         self.conditions = [
-    NoCondition(),  # no condition on Vs
-    BundleIVP(1, None, bundle_param_lookup=dict(u_0=1)), #condition on Va = -4 pi T
-    BundleIVP(0, 1),   # Vphi(0) ==1
-    BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
-    BundleDirichletBVP(0, 1, 1, 0),   # A (0) == 1  A(1)=0
-    BundleIVP(0, 0),  #phi(0)=0 #BundleDirichletBVP(0, 0,1, phi_yago[-1])#
-
-]
-        self.nets = [FCNN(n_input_units=3, hidden_units=[32,32,32]) for _ in range(6)]
+            NoCondition(),  # no condition on Vs
+            BundleIVP(1, None, bundle_param_lookup=dict(u_0=1)), #condition on Va = -4 pi T
+            BundleIVP(0, 1),   # Vphi(0) ==1
+            BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
+            BundleDirichletBVP(0, 1, 1, 0),   # A (0) == 1  A(1)=0
+            BundleIVP(0, 0),  #phi(0)=0 #BundleDirichletBVP(0, 0,1, phi_yago[-1])#
+            ]       
         
-      #  self.adam = torch.optim.Adam(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
-        #                lr=1e-3)#,  betas=(0.9, 0.99))
         self.adam = torch.optim.Adam(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
                         lr=1e-3)#,  betas=(0.9, 0.99))
         
@@ -406,7 +597,7 @@ class NNholo():
         self.solver = CustomBundleSolver1D( ode_system=self.equations,
                                             conditions=self.conditions,
                                             t_min=self.delta,
-                                            t_max=1,
+                                            t_max=1,	
                                             train_generator=self.train_generator,
                                             valid_generator=self.valid_generator,
                                             optimizer=self.adam,
@@ -415,6 +606,27 @@ class NNholo():
                                             eq_param_index=(),
                                             V = self.V
                                         )
+
+    def monitor_outputs(self, batch):
+
+        u, sigma, Va = batch
+        inputs = torch.cat([u.reshape(-1, 1), 
+                       sigma.reshape(-1, 1), 
+                       Va.reshape(-1, 1)], dim=1)
+    
+    # Get raw outputs from both networks
+        metric_outputs = self.net_a(inputs)  # Should be shape [batch_size, 4]
+        scalar_outputs = self.net_b(inputs)  # Should be shape [batch_size, 2]
+    
+        print(f"Metric network outputs shape: {metric_outputs.shape}")
+        print(f"Scalar network outputs shape: {scalar_outputs.shape}")
+    
+    # Print sample values
+        print("\nSample metric outputs:")
+        print(metric_outputs[0])
+        print("\nSample scalar outputs:")
+        print(scalar_outputs[0])
+
     def sofT_curve(self):
         
         print('S_min: ', min(self.S_true))

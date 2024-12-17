@@ -1,7 +1,8 @@
 import os
 import copy
 from re import L
-import dill 
+import dill
+import math 
 import torch
 import warnings
 import numpy as np
@@ -74,6 +75,647 @@ def DV_or(phi):
             phim**4*(12*phi**8*(-45 + 4*phi**2) + phiq**2*(9 + 4*phi**2) -
            4*phiq*phi**4*(-9 + 8*phi**2))))
 
+class CustomNNWithPhiAttention(nn.Module):
+    def __init__(self, n_input_units, hidden_units, actv, n_output_units):
+        super(CustomNNWithPhiAttention, self).__init__()
+        
+        # Set default number of heads
+        self.num_heads = 4
+        
+        # Layers list to hold all layers
+        self.layers = nn.ModuleList()
+        
+        # First hidden layer with special behavior
+        self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
+        
+        # Learnable parameters mu and sigma for the first layer
+        self.mu = nn.Parameter(torch.linspace(0, 2, hidden_units[0]))
+        self.sigma = torch.ones(hidden_units[0]) * 0.1
+        
+        # Remaining hidden layers
+        for i in range(len(hidden_units) - 1):
+            self.layers.append(actv())
+            self.layers.append(nn.Linear(hidden_units[i], hidden_units[i+1]))
+        
+        # MultiheadAttention layer
+        self.attention = nn.MultiheadAttention(
+            embed_dim=hidden_units[-1],
+            num_heads=self.num_heads,
+            batch_first=True
+        )
+        
+        # Learnable scale for phi-based attention
+        self.phi_scale = nn.Parameter(torch.ones(1))
+        
+        # Output layer
+        self.layers.append(actv())
+        self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
+        
+    def get_phi_attention_bias(self, phi_values, num_heads):
+
+        # Compute pairwise differences in phi: phi(1) - phi(2), etc etc.
+        phi_dists = torch.abs(phi_values.unsqueeze(-1) - phi_values.unsqueeze(-2))
+        
+        # Scale the distances with the learnable parameter
+        phi_bias = -self.phi_scale * phi_dists
+        
+        # Expand for number of heads (num_heads, seq_len, seq_len)
+        return phi_bias.expand(num_heads, -1, -1)
+        
+    def forward(self, x, phi_values=None):
+        # Process input to get phi values
+        x = x[:,0].reshape(-1,1)
+        
+        # Use input x as phi values if not provided
+        if phi_values is None:
+            phi_values = x.squeeze(-1)
+            
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+            if i == 0:
+                x = x * torch.exp(-(x - self.mu) ** 2 / self.sigma ** 2)
+        
+        # Reshape for attention
+        x = x.unsqueeze(0)  # Add batch dimension
+        
+        # Create attention mask based on phi differences
+        phi_bias = self.get_phi_attention_bias(phi_values, self.attention.num_heads)
+        attn_mask = phi_bias
+        
+        # Apply attention with phi-based bias
+        attn_output, attn_weights = self.attention(
+            query=x,
+            key=x,
+            value=x,
+            attn_mask=attn_mask
+        )
+        
+        # Store attention weights for analysis
+        self.last_attn_weights = attn_weights
+        
+        # Remove batch dimension and apply output layer
+        x = attn_output.squeeze(0)
+        x = self.fc_out(x)
+        
+        return x
+
+# def test_phi_attention(model, n_points=10):
+#     """
+#     Test the phi-based attention mechanism
+#     """
+#     model.eval()
+#     with torch.no_grad():
+#         # Create test inputs with varying phi values
+#         phi_values = torch.linspace(0, 2, n_points)
+#         input_tensor = phi_values.reshape(-1, 1)
+        
+#         # Forward pass
+#         output = model(input_tensor, phi_values)
+        
+#         # Get attention weights
+#         attn_weights = model.last_attn_weights
+        
+#         return {
+#             'phi_values': phi_values.numpy(),
+#             'output': output.numpy(),
+#             'attention_weights': attn_weights.squeeze().numpy()
+#         }
+
+# class WindowedAttention(nn.Module):
+#     def __init__(self, hidden_dim, window_size=3):
+#         super(WindowedAttention, self).__init__()
+#         self.hidden_dim = hidden_dim
+#         self.window_size = window_size
+#         self.attention = nn.MultiheadAttention(
+#             embed_dim=hidden_dim,
+#             num_heads=4,
+#             batch_first=True
+#         )
+        
+#     def forward(self, x):
+#         """
+#         x: tensor of shape (batch_size, sequence_length, hidden_dim)
+#         Uses sliding window attention where each position attends to its neighbors
+#         """
+#         batch_size, seq_len, _ = x.shape
+#         padding = self.window_size // 2
+        
+#         # Pad the sequence for sliding window
+#         x_padded = F.pad(x, (0, 0, padding, padding), mode='replicate')
+        
+#         # Create windows
+#         windows = []
+#         for i in range(seq_len):
+#             window = x_padded[:, i:i+self.window_size, :]
+#             windows.append(window)
+        
+#         # Stack windows
+#         windowed_x = torch.stack(windows, dim=1)
+#         batch_size, n_windows, window_size, hidden_dim = windowed_x.shape
+        
+#         # Reshape for attention
+#         windowed_x = windowed_x.view(batch_size * n_windows, window_size, hidden_dim)
+        
+#         # Apply attention within each window
+#         attn_output, attn_weights = self.attention(windowed_x, windowed_x, windowed_x)
+        
+#         # Reshape back
+#         output = attn_output.view(batch_size, seq_len, hidden_dim)
+#         self.last_attn_weights = attn_weights
+        
+#         return output
+
+# class CustomNNWithPhiAttention(nn.Module):
+#     def __init__(self, n_input_units, hidden_units, actv, n_output_units, attention_type='phi'):
+#         super(CustomNNWithPhiAttention, self).__init__()
+        
+#         # Layers list to hold all layers
+#         self.layers = nn.ModuleList()
+        
+#         # First hidden layer with special behavior
+#         self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
+        
+#         # Learnable parameters mu and sigma for the first layer
+#         self.mu = nn.Parameter(torch.linspace(0, 2, hidden_units[0]))
+#         self.sigma = torch.ones(hidden_units[0]) * 0.1
+        
+#         # Remaining hidden layers
+#         for i in range(len(hidden_units) - 1):
+#             self.layers.append(actv())
+#             self.layers.append(nn.Linear(hidden_units[i], hidden_units[i+1]))
+        
+#         # Choose attention type
+#         if attention_type == 'phi':
+#             self.attention = PhiAttention(hidden_units[-1])
+#         elif attention_type == 'window':
+#             self.attention = WindowedAttention(hidden_units[-1])
+        
+#         # Output layer
+#         self.layers.append(actv())
+#         self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
+        
+#         self.attention_type = attention_type
+        
+#     def forward(self, x, phi_values=None):
+#         # Process input to get phi values
+#         x = x[:,0].reshape(-1,1)
+        
+#         # If phi_values not provided, use the input values
+#         if phi_values is None:
+#             phi_values = x.squeeze(-1)
+        
+#         for i, layer in enumerate(self.layers):
+#             x = layer(x)
+#             if i == 0:
+#                 x = x * torch.exp(-(x - self.mu) ** 2 / self.sigma ** 2)
+        
+#         # Reshape for attention
+#         x = x.unsqueeze(1)  # (batch_size, 1, hidden_dim)
+        
+#         # Apply attention based on type
+#         if self.attention_type == 'phi':
+#             x = self.attention(x, phi_values)
+#         else:  # window attention
+#             x = self.attention(x)
+        
+#         # Squeeze back
+#         x = x.squeeze(1)
+        
+#         # Output layer transformation
+#         x = self.fc_out(x)
+#         return x
+
+# def test_attention(model, n_points=10):
+#     """
+#     Test either phi-based or windowed attention
+#     """
+#     model.eval()
+#     with torch.no_grad():
+#         # Create test inputs with varying phi values
+#         phi_values = torch.linspace(0, 2, n_points)
+#         input_tensor = phi_values.reshape(-1, 1)
+        
+#         # Forward pass
+#         output = model(input_tensor, phi_values)
+        
+#         # Get attention weights
+#         attn_weights = model.attention.last_attn_weights
+        
+#         return {
+#             'phi_values': phi_values.numpy(),
+#             'output': output.numpy(),
+#             'attention_weights': attn_weights.squeeze().numpy()
+#         }
+
+# class CustomNNWithRadialAttention(nn.Module):
+#     def __init__(self, n_input_units, hidden_units, actv, n_output_units, num_heads=4):
+#         super(CustomNNWithRadialAttention, self).__init__()
+        
+#         # Layers list to hold all layers
+#         self.layers = nn.ModuleList()
+        
+#         # First hidden layer with special behavior
+#         self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
+        
+#         # Learnable parameters mu and sigma for the first layer
+#         self.mu = nn.Parameter(torch.linspace(0, 2, hidden_units[0]))
+#         self.sigma = torch.ones(hidden_units[0]) * 0.1
+        
+#         # Remaining hidden layers
+#         for i in range(len(hidden_units) - 1):
+#             self.layers.append(actv())
+#             self.layers.append(nn.Linear(hidden_units[i], hidden_units[i+1]))
+        
+#         # MultiheadAttention layer
+#         self.attention = nn.MultiheadAttention(
+#             embed_dim=hidden_units[-1],
+#             num_heads=num_heads,
+#             batch_first=True
+#         )
+        
+#         # Learnable radial bias
+#         self.radial_scale = nn.Parameter(torch.ones(1))
+        
+#         # Output layer
+#         self.layers.append(actv())
+#         self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
+        
+#     def get_radial_attention_bias(self, u_coords, hidden_dim, num_heads):
+#         """
+#         Create attention bias based on radial distances
+#         """
+#         # Compute pairwise distances in u
+#         u_dists = torch.abs(u_coords.unsqueeze(-1) - u_coords.unsqueeze(-2))
+        
+#         # Scale the distances and reshape for attention
+#         radial_bias = -self.radial_scale * u_dists
+        
+#         # Expand for number of heads (num_heads, seq_len, seq_len)
+#         return radial_bias.expand(num_heads, -1, -1)
+        
+#     def forward(self, x, u_coords=None):
+#         # Process input to get phi values
+#         x = x[:,0].reshape(-1,1)
+        
+#         # Generate u coordinates if not provided
+#         if u_coords is None:
+#             u_coords = torch.linspace(0, 1, x.shape[0], device=x.device)
+            
+#         for i, layer in enumerate(self.layers):
+#             x = layer(x)
+#             if i == 0:
+#                 x = x * torch.exp(-(x - self.mu) ** 2 / self.sigma ** 2)
+        
+#         # Reshape for attention
+#         x = x.unsqueeze(0)  # Add batch dimension
+        
+#         # Create attention mask based on radial distances
+#         radial_bias = self.get_radial_attention_bias(u_coords, x.shape[-1], self.attention.num_heads)
+#         attn_mask = radial_bias
+        
+#         # Apply attention with radial bias
+#         attn_output, attn_weights = self.attention(
+#             query=x,
+#             key=x,
+#             value=x,
+#             attn_mask=attn_mask
+#         )
+        
+#         # Store attention weights for analysis
+#         self.last_attn_weights = attn_weights
+        
+#         # Remove batch dimension and apply output layer
+#         x = attn_output.squeeze(0)
+#         x = self.fc_out(x)
+        
+#         return x
+
+# def test_radial_attention(model, n_points=10):
+#     """
+#     Test the radial attention mechanism
+#     """
+#     model.eval()
+#     with torch.no_grad():
+#         # Create test inputs along the radial coordinate
+#         u_values = torch.linspace(0, 1, n_points)
+#         phi_values = torch.sin(2 * np.pi * u_values).reshape(-1, 1)  # Example phi profile
+        
+#         # Forward pass
+#         output = model(phi_values, u_values)
+        
+#         # Get attention weights
+#         attn_weights = model.last_attn_weights
+        
+#         return {
+#             'u_coords': u_values.numpy(),
+#             'phi_values': phi_values.numpy(),
+#             'output': output.numpy(),
+#             'attention_weights': attn_weights.squeeze().numpy()
+#         }
+
+# class CustomNNWithAttention(nn.Module):
+#     def __init__(self, n_input_units, hidden_units, actv, n_output_units):
+#         super(CustomNNWithAttention, self).__init__()
+        
+#         # Layers list to hold all layers
+#         self.layers = nn.ModuleList()
+        
+#         # First hidden layer with special behavior
+#         self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
+        
+#         # Learnable parameters mu and sigma for the first layer
+#         self.mu = nn.Parameter(torch.linspace(0, 2, hidden_units[0]))
+#         self.sigma = torch.ones(hidden_units[0]) * 0.1
+        
+#         # Remaining hidden layers
+#         for i in range(len(hidden_units) - 1):
+#             self.layers.append(actv())
+#             self.layers.append(nn.Linear(hidden_units[i], hidden_units[i+1]))
+        
+#         # Adding built-in PyTorch attention layer. THIS is the only new thing so far.
+#         self.attention = nn.MultiheadAttention(
+#             embed_dim=hidden_units[-1], # The dimension of the feature vectors (16 in our case), how many features each position has to attend to other positions.
+#             num_heads=4,
+#             batch_first=True
+#         )
+    
+
+#         # Output layer
+#         self.layers.append(actv())
+#         self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
+        
+#     def forward(self, x):
+#         # Process input to get phi values
+#         print("Initial", x)
+#         inputx = x[:,0].reshape(-1,1)
+#         x = inputx
+#         print("Reshaped", x)  
+        
+#         for i, layer in enumerate(self.layers):
+#             x = layer(x)
+            
+#             # Apply the custom operation after the first layer
+#             if i == 0:
+#                 x = x * torch.exp(-(x - self.mu) ** 2 / self.sigma ** 2)
+        
+#         # Reshape for attention, as we need input in the form (batch_size, sequence_length, features) so we add one extra dimension. 
+#         # Before the x tensor was in the form  (batch_size, features).
+#         #x = x.unsqueeze(1)
+
+#         print("x shape before reshape:", x.shape)
+#         print("Total elements:", x.numel())
+
+#         # Reshape x to group points together as a sequence
+#         sequence_length = 16  # or however many points you want to group
+#         x = x.reshape(-1, sequence_length, x.shape[-1])
+#         print("Attention input", x)
+#         attn_output, attn_weights = self.attention(x, x, x)
+#         print("Attention output", attn_output)
+#         print("Attention weights", attn_weights)
+
+#         # Instead of x.unsqueeze(1), we could collect a window of points
+#         # window_size = 5
+#         # x_windows = torch.stack([x[i:i+window_size] for i in range(len(x)-window_size+1)], dim=0)
+#         # print(x_windows)
+#         # # Now x_windows has shape (batch_size, window_size, features)
+#         # # Each position can attend to others in its window
+
+#         # attn_output, attn_weights = self.attention(x_windows, x_windows, x_windows)
+        
+#         # Apply attention. We need query, key, and value (all the same in self-attention right?)
+#         #attn_output, attn_weights = self.attention(x, x, x)
+        
+#         # Store attention weights for analysis
+#         self.last_attn_weights = attn_weights
+#         print("Last weights", self.last_attn_weights)
+        
+#         # Squeeze back to original shape
+#         x = attn_output.squeeze(1)
+        
+#         # Output layer transformation
+#         x = self.fc_out(x)
+#         return x
+    
+# def test_attention_model(model, input_values):
+#     """
+#     Test the attention mechanism by checking outputs and attention weights
+#     """
+#     model.eval()
+#     with torch.no_grad():
+#         # Create input tensor
+#         x = torch.tensor(input_values)  # will use default float32
+#         if len(x.shape) == 1:
+#             x = x.unsqueeze(0)
+            
+#         # Forward pass
+#         output = model(x)
+        
+#         # Get attention weights from the last forward pass
+#         attn_weights = model.last_attn_weights
+        
+#         return {
+#             'input': x.numpy(),
+#             'output': output.numpy(),
+#             'attention_weights': attn_weights.squeeze().numpy()
+#         }
+    
+
+# class CustomNNWithAttention(nn.Module):
+#     def __init__(self, n_input_units, hidden_units, actv, n_output_units, seq_length=5):
+#         super(CustomNNWithAttention, self).__init__()
+        
+#         self.seq_length = seq_length
+#         self.hidden_units = hidden_units
+        
+#         # Initial layers
+#         self.layers = nn.ModuleList()
+#         self.layers.append(nn.Linear(n_input_units, hidden_units[0]))
+        
+#         self.mu = nn.Parameter(torch.linspace(0, 2, hidden_units[0]))
+#         self.sigma = torch.ones(hidden_units[0]) * 0.1
+        
+#         # Hidden layers
+#         for i in range(len(hidden_units) - 1):
+#             self.layers.append(actv())
+#             self.layers.append(nn.Linear(hidden_units[i], hidden_units[i+1]))
+        
+#         # Positional encoding with learnable scale
+#         pe = self._create_positional_encoding(seq_length, hidden_units[-1])
+#         self.register_buffer("positional_encoding", pe)
+#         self.pos_scale = nn.Parameter(torch.ones(1))  # Learnable scale for positional encoding
+        
+#         # Self-attention layer
+#         self.attention = nn.MultiheadAttention(
+#             embed_dim=hidden_units[-1], 
+#             num_heads=1,  # Reduced number of heads
+#             batch_first=True,
+#             dropout=0.1  # Added dropout
+#         )
+#         self.layer_norm = nn.LayerNorm(hidden_units[-1])
+        
+#         self.post_attention = nn.Sequential(
+#             nn.Linear(hidden_units[-1], hidden_units[-1]),
+#             actv(),
+#             nn.LayerNorm(hidden_units[-1])
+#         )
+        
+#         # Output layers
+#         self.layers.append(actv())
+#         self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
+        
+#         self.attention_weights = None
+        
+#     def _create_positional_encoding(self, seq_length, d_model):
+#         pe = torch.zeros(1, seq_length, d_model)
+#         position = torch.arange(0, seq_length, dtype=torch.float).unsqueeze(1)
+        
+#         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(1000.0) / d_model))
+        
+#         pe[0, :, 0::2] = torch.sin(position * div_term)
+#         if d_model % 2 != 0:
+#             pe[0, :, 1::2] = torch.cos(position * div_term)[:, :-1]
+#         else:
+#             pe[0, :, 1::2] = torch.cos(position * div_term)
+            
+#         return pe
+    
+#     def _create_sequence(self, features):
+#         batch_size = features.shape[0]
+#         hidden_dim = features.shape[-1]
+#         device = features.device
+        
+#         # Use smaller sequences
+#         sequences = torch.zeros(batch_size, self.seq_length, hidden_dim, device=device)
+#         half_seq = self.seq_length // 2
+        
+#         for i in range(batch_size):
+#             # Calculate indices with mirror padding
+#             start_idx = max(0, i - half_seq)
+#             end_idx = min(batch_size, i + half_seq + 1)
+            
+#             # Get sequence
+#             seq = features[start_idx:end_idx]
+            
+#             # Handle boundaries with mirror padding
+#             if i < half_seq:
+#                 # Mirror left boundary
+#                 pad_left = features[0:1].flip(0).repeat(half_seq - i, 1)
+#                 seq = torch.cat([pad_left, seq])
+#             if i >= batch_size - half_seq:
+#                 # Mirror right boundary
+#                 pad_right = features[-1:].flip(0).repeat(half_seq - (batch_size - 1 - i), 1)
+#                 seq = torch.cat([seq, pad_right])
+            
+#             # Ensure correct length
+#             seq = seq[:self.seq_length]
+#             sequences[i] = seq
+            
+#         return sequences
+    
+#     def forward(self, x):
+#         # Initial processing
+#         features = x
+#         for i, layer in enumerate(self.layers):
+#             features = layer(features)
+#             if i == 0:
+#                 features = features * torch.exp(-(features - self.mu) ** 2 / self.sigma ** 2)
+        
+#         # Create sequences with positional information
+#         seq_features = self._create_sequence(features)
+#         seq_features = seq_features + self.pos_scale * self.positional_encoding.to(x.device)
+        
+#         # Apply attention with residual connection
+#         attn_out, attn_weights = self.attention(
+#             seq_features, 
+#             seq_features, 
+#             seq_features,
+#             need_weights=True
+#         )
+#         self.attention_weights = attn_weights
+        
+#         # Process attention output
+#         features = seq_features + attn_out
+#         features = self.layer_norm(features)
+#         features = self.post_attention(features)
+        
+#         # Take middle position and process output
+#         features = features[:, self.seq_length//2, :]
+#         return self.fc_out(features)
+    
+#     def get_attention_pattern(self, x):
+#         """Return attention weights for a given input"""
+#         self.eval()
+#         with torch.no_grad():
+#             _ = self.forward(x)
+#             return self.attention_weights
+
+# def analyze_attention(model, input_range=torch.linspace(0, 2, 100)):
+#     attention_patterns = []
+#     input_tensor = input_range.reshape(-1, 1)
+    
+#     # Get attention weights for each input
+#     attn_weights = model.get_attention_pattern(input_tensor)
+    
+#     # Average across heads if using multiple attention heads
+#     avg_attention = attn_weights.mean(dim=1)
+    
+#     return {
+#         'input_range': input_range,
+#         'attention_weights': avg_attention,
+#         'raw_weights': attn_weights
+#     }
+
+# def plot_attention_analysis(analysis_results):
+    
+#     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    
+#     # Average attention heatmap
+#     sns.heatmap(
+#         analysis_results['attention_weights'].cpu().numpy(),
+#         ax=axes[0,0],
+#         cmap='viridis'
+#     )
+#     axes[0,0].set_title('Average Attention Pattern')
+    
+#     # Attention weights distribution
+#     axes[0,1].hist(
+#         analysis_results['attention_weights'].cpu().numpy().flatten(),
+#         bins=50
+#     )
+#     axes[0,1].set_title('Distribution of Attention Weights')
+    
+#     # Per-head attention patterns
+#     for head in range(analysis_results['raw_weights'].shape[1]):
+#         head_weights = analysis_results['raw_weights'][:,head].cpu().numpy()
+#         axes[1,0].plot(head_weights.mean(axis=1), label=f'Head {head+1}')
+#     axes[1,0].set_title('Per-head Average Attention')
+#     axes[1,0].legend()
+    
+#     # Attention entropy (measure of focus vs. spread)
+#     entropy = -(analysis_results['attention_weights'] * 
+#                torch.log(analysis_results['attention_weights'] + 1e-10)).sum(dim=-1)
+#     axes[1,1].plot(analysis_results['input_range'].cpu().numpy(), 
+#                   entropy.cpu().numpy())
+#     axes[1,1].set_title('Attention Entropy (higher = more spread attention)')
+    
+#     plt.tight_layout()
+#     return fig
+
+# def attention_metrics(analysis_results):
+
+#     #Calculate metrics to evaluate attention behavior
+
+#     attn_weights = analysis_results['attention_weights']
+    
+#     metrics = {
+#         'average_attention': attn_weights.mean().item(),
+#         'max_attention': attn_weights.max().item(),
+#         'attention_sparsity': (attn_weights < 0.1).float().mean().item(),
+#         'entropy': -(attn_weights * torch.log(attn_weights + 1e-10)).sum().item()
+#     }
+    
+#     return metrics
+
 class CustomNN(nn.Module):
     def __init__(self, n_input_units, hidden_units, actv, n_output_units):
         super(CustomNN, self).__init__()
@@ -100,7 +742,7 @@ class CustomNN(nn.Module):
         self.fc_out = nn.Linear(hidden_units[-1], n_output_units)
 
     def forward(self, x):
-
+        # Input processing
         inputx = x[:,0].reshape(-1,1)
         #print(inputx.shape)
         for i, layer in enumerate(self.layers):
@@ -109,7 +751,7 @@ class CustomNN(nn.Module):
             # Apply the custom operation after the first layer
             if i == 0:
                 x = x * torch.exp(- (x - self.mu) ** 2 / self.sigma ** 2)
-
+                
         # Output layer transformation
         x = self.fc_out(x)
         return x
@@ -138,43 +780,6 @@ class MeshGenerator(BaseGenerator):
         bb = [bb[:, :, i].reshape(-1) for i in range(n_params)]
 
         return uu, *bb
-
-
-    # def get_examples(self):
-    # 	u = self.g1.get_examples()
-    # 	print(u)
-    # 	#u = u.reshape(-1)  # Just make it 1D first
-    # 	print(u.reshape(-1)-u)
-
-        
-    # 	bundle_params = self.pg.get_examples()
-    # 	if isinstance(bundle_params, torch.Tensor):
-    # 		bundle_params = (bundle_params,)
-    # 		print(bundle_params)
-            
-    # 	# Take only the first point from bundle_params
-    # 	Sigma_h = bundle_params[0][0]
-    # 	Va_h = bundle_params[1][0]
-    # 	print(Sigma_h)
-    # 	print(Va_h)
-        
-    # 	# Repeat for each u point
-    # 	Sigma_h = Sigma_h * torch.ones_like(u)
-    # 	Va_h = Va_h * torch.ones_like(u)
-
-    # 	print(Sigma_h)
-    # 	print(Va_h)
-        
-    # 	return u, Sigma_h, Va_h
-    
-
-# class minmaxScaler():
-#   def __init__(self, x):
-# 	self.minx = x.min().detach().item()
-# 	self.maxx = x.max().detach().item()
-
-#   def transform(self, x):
-# 	return (x - self.minx)/(self.maxx - self.minx)
   
 class DoSchedulerStep(ActionCallback):
     def __init__(self, scheduler):
@@ -188,11 +793,22 @@ class BestValidationCallback(ActionCallback):
     def __init__(self):
         super().__init__()
         self.best_potential = None
+        self.best_state_dict = None  # Store state dict instead of entire model
 
     def __call__(self, solver):
         if solver.lowest_loss is None or solver.metrics_history['r2_loss'][-1] <= solver.lowest_loss:
-            self.best_potential = copy.deepcopy(solver.V)
-
+            # Store the state dictionary instead of the whole model
+            self.best_state_dict = {
+                key: val.cpu().clone() for key, val in solver.V.state_dict().items()
+            }
+            #self.best_potential = copy.deepcopy(solver.V)
+    
+    def get_best_model(self):
+        """Return the best model if it exists"""
+        if self.best_state_dict is not None:
+            return self.best_state_dict
+        return None
+    
 class Store_MSE_Loss(ActionCallback):
     def __init__(self):
         super().__init__()
@@ -205,17 +821,6 @@ class Store_MSE_Loss(ActionCallback):
             r = solver.get_residuals(*batch, to_numpy = True)
             self.mse_loss_history.append((np.array(r)**2).mean())
 
-# class Store_MSE_Loss(ActionCallback):
-#     def __init__(self):
-#         super().__init__()
-#         self.mse_loss_history = []
-
-#     def __call__(self, solver):
-#         if solver.global_epoch % 10 == 0:
-#           for i in range(5):
-#             batch = self.generator['train'].get_examples()
-#             r = solver.get_residuals(*batch, to_numpy = True)
-#             self.mse_loss_history.append((np.array(r)**2).mean())
 
 class CustomBundleSolver1D(BundleSolver1D):
     def __init__(self, *args, **kwargs):
@@ -385,29 +990,27 @@ class NNholo():
                 
 
         def forward(self, input_tensor):
-            print(f"MetricNet forward pass for output {self.output_idx}")
+            #print(f"MetricNet forward pass for output {self.output_idx}")
                 # args contains the broadcasted outputs from original MeshGenerator
-            u = input_tensor[:, 0].reshape(-1, 1)
+            # u = input_tensor[:, 0].reshape(-1, 1)
         
-                # Convert to S, T
-            S = (input_tensor[:, 1] * np.pi) ** 3
-            T = -input_tensor[:, 2] / (4 * np.pi)
-
-            print(S)
+            #     # Convert to S, T
+            # S = (input_tensor[:, 1] * np.pi) ** 3
+            # T = -input_tensor[:, 2] / (4 * np.pi)
         
-                # Reshape all inputs to [2928, 1]
-            S = S.reshape(-1, 1)
-            T = T.reshape(-1, 1)
-            print(S)
+            #     # Reshape all inputs to [2928, 1]
+            # S = S.reshape(-1, 1)
+            # T = T.reshape(-1, 1)
         
                 # Feed to network
-            print("Network input shape:", torch.cat([u, S, T], dim=1).shape)
+            # print("Network input shape:", torch.cat([u, S, T], dim=1).shape)
 
-            outputs = self.net_a(torch.cat([u, S, T], dim=1))
+            # outputs = self.net_a(torch.cat([u, S, T], dim=1))
+            outputs = self.net_a(input_tensor)
 
-            print(f"MetricNet output shape before slicing: {outputs.shape}")
-            print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
-            print("Result", outputs[:, self.output_idx:self.output_idx+1])
+            # print(f"MetricNet output shape before slicing: {outputs.shape}")
+            # print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
+            # print("Result", outputs[:, self.output_idx:self.output_idx+1])
                 
             return outputs[:, self.output_idx:self.output_idx+1]
 
@@ -420,20 +1023,22 @@ class NNholo():
 
         def forward(self, input_tensor):
 
-            print(f"ScalarNet forward pass for output {self.output_idx}")
+            #print(f"ScalarNet forward pass for output {self.output_idx}")
         # Same handling as MetricNet
-            u = input_tensor[:, 0].reshape(-1, 1)
+            # u = input_tensor[:, 0].reshape(-1, 1)
         
-            S = (input_tensor[:, 1] * np.pi) ** 3
-            T = -input_tensor[:, 2] / (4 * np.pi)
+            # S = (input_tensor[:, 1] * np.pi) ** 3
+            # T = -input_tensor[:, 2] / (4 * np.pi)
 
-            S = S.reshape(-1, 1)
-            T = T.reshape(-1, 1)
+            # S = S.reshape(-1, 1)
+            # T = T.reshape(-1, 1)
         
-            outputs = self.net_b(torch.cat([u, S, T], dim=1))
-            print(f"ScalarNet output shape before slicing: {outputs.shape}")
-            print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
-            print("Result", outputs[:, self.output_idx:self.output_idx+1])
+            # outputs = self.net_b(torch.cat([u, S, T], dim=1))
+            outputs = self.net_b(input_tensor)
+
+            # print(f"ScalarNet output shape before slicing: {outputs.shape}")
+            # print("Final output shape:", outputs[:, self.output_idx:self.output_idx+1].shape)
+            # print("Result", outputs[:, self.output_idx:self.output_idx+1])
             return outputs[:, self.output_idx:self.output_idx+1]	
 
     def verify_network_usage(self):
@@ -523,36 +1128,11 @@ class NNholo():
         print(f"\nTest outputs:")
         print(f"net_a output shape: {out_a.shape}")
         print(f"net_b output shape: {out_b.shape}")		
-
-
-        # self.nets = [self.net_a, self.net_b]
         
         # Defines the custom NN for the potential V. It takes 1 input (phi) and outputs 1 value (V(phi)), and has 4 hidden layers with 16 units each.  
         self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1)
-
         
-        # Update nets list to have 6 "virtual" networks that map to our 2 actual networks
-        # class MetricNet(nn.Module):
-        #     def __init__(self, net_a, output_idx):
-        #         super().__init__()
-        #         self.net_a = net_a
-        #         self.output_idx = output_idx
-    
-        #     def forward(self):
-        #         outputs = self.net_a(MeshGenerator(self.g1, self.pg), dim=1)
-        #         return outputs[:, self.output_idx:self.output_idx+1]
-
-        # class ScalarNet(nn.Module):
-        #     def __init__(self, net_b, output_idx):
-        #         super().__init__()
-        #         self.net_b = net_b
-        #         self.output_idx = output_idx
-    
-        #     def forward(self, *args):
-        #         u, S, T = args
-        #         outputs = self.net_b(torch.cat([u, S, T], dim=1))
-        #         return outputs[:, self.output_idx:self.output_idx+1]+
-        
+        # Check out fine tuning
 
         # Create the 6 virtual networks that map to components of net_a and net_b
         self.nets = [
@@ -563,21 +1143,6 @@ class NNholo():
             self.__class__.MetricNet(self.net_a, 1),  # A
             self.__class__.ScalarNet(self.net_b, 0),  # phi
         ]
-        
-                # Modify conditions for new structure
-        # self.conditions = [
-        #     BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # For Sigma
-        #     BundleDirichletBVP(0, 1, 1, 0),   # For A
-        #     BundleIVP(0, 0)    # For phi
-        #     ]
-        # self.conditions = [
-        #     NoCondition(),  # no condition on Vs
-        #     NoCondition(),  # no condition on Va
-        #     NoCondition(),  # no condition on Vp
-        #     BundleDirichletBVP(0, 1, 1, None, bundle_param_lookup=dict(u_1=0)),  # Sigma_{u=0} = 1, Sigma_{u=1}=(S/pi)**(1/3)
-        #     BundleDirichletBVP(0, 1, 1, 0),   # A(0) = 1, A(1) = 0
-        #     BundleIVP(0, 0),  # phi(0) = 0
-        # ]
         
         self.conditions = [
             NoCondition(),  # no condition on Vs
@@ -1195,7 +1760,7 @@ class NNholo():
             data = dill.load(file)
         os.remove(path)
         try:
-            data['V_best'] = self.solver.callbacks[0].best_potential.state_dict()
+            data['V_best'] = self.solver.callbacks[0].best_state_dict  # Changed from best_potential.state_dict()
             data['V_latest'] = self.V.state_dict()
 
         except:
@@ -1211,7 +1776,7 @@ class NNholo():
         self.saved_data = data   
         
         try:     
-            self.V.load_state_dict(data['V_best'])
+            self.V.load_state_dict(data['V_best'])  
         except:
             self.V.load_state_dict(data['V_latest'])
 
@@ -1250,3 +1815,72 @@ class NNholo():
         self.solver.metrics_history['train_loss'] = train_loss
         self.solver.metrics_history['valid_loss'] = valid_loss
         self.solver.diff_eqs_source = data['diff_equation_details']['equation']
+
+    
+    def run_attention_analysis(self):
+        """
+        Analyze attention patterns directly on the trained model.
+        Should be called as a method of NNholo after training.
+        """
+    # Analyze attention patterns across phi range
+        print("\nTest 1: Basic Attention Pattern")
+        phi_range = torch.linspace(0, 2, 100)
+        results = analyze_attention(self.V, phi_range)
+    
+        fig = plot_attention_analysis(results)
+        plt.show()
+    
+    # Test near critical points
+        print("\nTest 2: Attention near potential minimum")
+        u = np.linspace(0.0001, 1, 100)
+        solution = self.solver.get_solution(best=True)
+    
+    # Sample points to find approximate phi_min
+        phi_values = []
+        for S, T in zip(self.S_true[:5], self.T_true[:5]):
+            Sigma_h = (S/np.pi)**(1/3)
+            Va_h = (-T*4*np.pi)
+            Sigma_uh = Sigma_h.cpu().detach().numpy()*np.ones_like(u)
+            Va_uh = Va_h.cpu().detach().numpy()*np.ones_like(u)
+            _, _, _, _, _, phi = solution(u, Sigma_uh, Va_uh, to_numpy=True)
+            phi_values.append(phi.max())
+    
+        phi_min = np.mean(phi_values)
+    
+    # Analyze around phi_min
+        phi_critical = torch.linspace(phi_min - 0.2, phi_min + 0.2, 50)
+        critical_results = analyze_attention(self.V, phi_critical)
+        metrics = attention_metrics(critical_results)
+    
+        print("\nAttention Metrics near critical point:")
+        for metric, value in metrics.items():
+            print(f"{metric}: {value:.4f}")
+    
+    # Compare outputs with attention enabled vs disabled
+        print("\nTest 3: Output Comparison")
+        test_input = torch.linspace(0, 2, 10).reshape(-1, 1)
+    
+    # Get output with attention
+        attention_output = self.V(test_input)
+    
+    # Temporarily disable attention by zeroing attention weights
+        with torch.no_grad():
+        # Store original weights
+            orig_weights = self.V.attention.in_proj_weight.clone()
+        # Zero out attention
+            self.V.attention.in_proj_weight.zero_()
+        # Get output without attention
+            no_attention_output = self.V(test_input)
+        # Restore weights
+            self.V.attention.in_proj_weight.copy_(orig_weights)
+    
+        plt.figure(figsize=(10, 6))
+        plt.plot(test_input.numpy(), no_attention_output.detach().numpy(), 
+                label='Without Attention')
+        plt.plot(test_input.numpy(), attention_output.detach().numpy(), 
+                label='With Attention')
+        plt.title('Output Comparison: With vs Without Attention')
+        plt.xlabel('φ')
+        plt.ylabel('V(φ)')
+        plt.legend()
+        plt.show()

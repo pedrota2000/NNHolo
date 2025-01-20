@@ -271,9 +271,9 @@ class CustomBundleSolver1D(BundleSolver1D):
                 bar.update(1)
 
 # IMPORT DATA
-df_data_yago_a1 = pd.read_csv("../Data/1st order/A_hT.txt", sep=" ", header=None).values
-df_data_yago_sigma1 = pd.read_csv("../Data/1st order/Sigma_hT.txt", sep=" ", header=None).values
-df_data_yago_phi1 = pd.read_csv("../Data/1st order/phi_hT.txt", sep=" ", header=None).values
+df_data_yago_a1 = pd.read_csv("./Data/1st order/A_hT.txt", sep=" ", header=None).values
+df_data_yago_sigma1 = pd.read_csv("./Data/1st order/Sigma_hT.txt", sep=" ", header=None).values
+df_data_yago_phi1 = pd.read_csv("./Data/1st order/phi_hT.txt", sep=" ", header=None).values
 
 A_yago1 = df_data_yago_a1[:, 1]
 u_yago1 = df_data_yago_a1[:, 0]
@@ -282,9 +282,9 @@ phi_yago1 = df_data_yago_phi1[:, 1]
 
 
 #point 2 (mid point)
-df_data_yago_a2 = pd.read_csv("../Data/1st order/A_mT.txt", sep=" ", header=None).values
-df_data_yago_sigma2 = pd.read_csv("../Data/1st order/Sigma_mT.txt", sep=" ", header=None).values
-df_data_yago_phi2 = pd.read_csv("../Data/1st order/phi_mT.txt", sep=" ", header=None).values
+df_data_yago_a2 = pd.read_csv("./Data/1st order/A_mT.txt", sep=" ", header=None).values
+df_data_yago_sigma2 = pd.read_csv("./Data/1st order/Sigma_mT.txt", sep=" ", header=None).values
+df_data_yago_phi2 = pd.read_csv("./Data/1st order/phi_mT.txt", sep=" ", header=None).values
 
 A_yago2 = df_data_yago_a2[:, 1]
 u_yago2 = df_data_yago_a2[:, 0]
@@ -292,9 +292,9 @@ Sigma_yago2 = df_data_yago_sigma2[:, 1]
 phi_yago2 = df_data_yago_phi2[:, 1]
 
 #point 3 (left point)
-df_data_yago_a3 = pd.read_csv("../Data/1st order/A_lT.txt", sep=" ", header=None).values
-df_data_yago_sigma3 = pd.read_csv("../Data/1st order/Sigma_lT.txt", sep=" ", header=None).values
-df_data_yago_phi3 = pd.read_csv("../Data/1st order/phi_lT.txt", sep=" ", header=None).values
+df_data_yago_a3 = pd.read_csv("./Data/1st order/A_lT.txt", sep=" ", header=None).values
+df_data_yago_sigma3 = pd.read_csv("./Data/1st order/Sigma_lT.txt", sep=" ", header=None).values
+df_data_yago_phi3 = pd.read_csv("./Data/1st order/phi_lT.txt", sep=" ", header=None).values
 
 A_yago3 = df_data_yago_a3[:, 1]
 u_yago3 = df_data_yago_a3[:, 0]

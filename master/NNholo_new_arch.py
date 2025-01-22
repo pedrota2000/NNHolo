@@ -124,10 +124,10 @@ class MeshGenerator(BaseGenerator):
 
     def get_examples(self):
 
-        u = self.g1.get_examples()
+        u = self.g1.get_examples() # This gives you the u's (61)
         u = u.reshape(-1, 1, 1)
 
-        bundle_params = self.pg.get_examples()
+        bundle_params = self.pg.get_examples() # This gives you the S and T's in that order (16)
         if isinstance(bundle_params, torch.Tensor):
             bundle_params = (bundle_params,)
         assert len(bundle_params[0].shape) == 1, "shape error, ask shuheng"
@@ -185,7 +185,7 @@ class CustomBundleSolver1D(BundleSolver1D):
         self.V = kwargs.pop('V', None)
 
         super().__init__( *args, **kwargs)
-        self.metrics_history['r2_loss'] = []
+        self.metrics_history['r2_loss'] = [] # metrics_history is a dictionary with entries: train_loss, valid_loss, r2_loss, phi_max
         self.metrics_history['phi_max'] = []
 
     def _set_loss_fn(self, criterion):
@@ -197,6 +197,33 @@ class CustomBundleSolver1D(BundleSolver1D):
         self.metrics_history['r2_loss'].append((r**2).mean().detach().item())
         self.metrics_history['phi_max'].append(f[5][-49: ].mean().detach().item())
         return loss_r2
+
+        # f = vs, vA, vphi, sigma, A, phi. Should add a coefficient. STRONG ENERGY CONDITION ON ENERGY-MOMENTUM TENSOR
+    # def additional_loss(self,r,f,x): # r = residues of the ODEs | f = A, sigma, etc | x = u, S, T
+    #     phi=f[5].reshape(-1,1)
+    #     #print(cosa)
+    #     V = self.V(phi)
+    #     Dphi = f[2]**2
+    #     A = f[4]
+    #     u = x[0]
+
+    #     print("phi: ",phi)
+    #     print("V: ",V)
+    #     print("Derivative of phi: ",Dphi)
+    #     print("A: ",A)
+    #     print("u: ",u)
+    #     print("Residues: ",r)
+    #     print("NN parameters: ",f)
+    #     print("Boundary parameters: ",x)
+
+    #     #DV = diff(self.V(cosa), cosa, shape_check=False)
+    #    #DDV = diff(diff(self.V(cosa),cosa,shape_check=False),cosa,shape_check=False)
+    #     add_loss = 2*V + (u**4)*A*Dphi
+    #     print(add_loss)
+    #     sum_loss = nn.ReLU(-add_loss)
+    #     print(sum_loss)
+
+    #     return sum_loss
 
     def _update_best(self, key):
         """Update ``self.lowest_loss`` and ``self.best_nets``
@@ -271,9 +298,9 @@ class CustomBundleSolver1D(BundleSolver1D):
                 bar.update(1)
 
 # IMPORT DATA
-df_data_yago_a1 = pd.read_csv("./Data/1st order/A_hT.txt", sep=" ", header=None).values
-df_data_yago_sigma1 = pd.read_csv("./Data/1st order/Sigma_hT.txt", sep=" ", header=None).values
-df_data_yago_phi1 = pd.read_csv("./Data/1st order/phi_hT.txt", sep=" ", header=None).values
+df_data_yago_a1 = pd.read_csv("../Data/1st order/A_hT.txt", sep=" ", header=None).values
+df_data_yago_sigma1 = pd.read_csv("../Data/1st order/Sigma_hT.txt", sep=" ", header=None).values
+df_data_yago_phi1 = pd.read_csv("../Data/1st order/phi_hT.txt", sep=" ", header=None).values
 
 A_yago1 = df_data_yago_a1[:, 1]
 u_yago1 = df_data_yago_a1[:, 0]
@@ -282,9 +309,9 @@ phi_yago1 = df_data_yago_phi1[:, 1]
 
 
 #point 2 (mid point)
-df_data_yago_a2 = pd.read_csv("./Data/1st order/A_mT.txt", sep=" ", header=None).values
-df_data_yago_sigma2 = pd.read_csv("./Data/1st order/Sigma_mT.txt", sep=" ", header=None).values
-df_data_yago_phi2 = pd.read_csv("./Data/1st order/phi_mT.txt", sep=" ", header=None).values
+df_data_yago_a2 = pd.read_csv("../Data/1st order/A_mT.txt", sep=" ", header=None).values
+df_data_yago_sigma2 = pd.read_csv("../Data/1st order/Sigma_mT.txt", sep=" ", header=None).values
+df_data_yago_phi2 = pd.read_csv("../Data/1st order/phi_mT.txt", sep=" ", header=None).values
 
 A_yago2 = df_data_yago_a2[:, 1]
 u_yago2 = df_data_yago_a2[:, 0]
@@ -292,9 +319,9 @@ Sigma_yago2 = df_data_yago_sigma2[:, 1]
 phi_yago2 = df_data_yago_phi2[:, 1]
 
 #point 3 (left point)
-df_data_yago_a3 = pd.read_csv("./Data/1st order/A_lT.txt", sep=" ", header=None).values
-df_data_yago_sigma3 = pd.read_csv("./Data/1st order/Sigma_lT.txt", sep=" ", header=None).values
-df_data_yago_phi3 = pd.read_csv("./Data/1st order/phi_lT.txt", sep=" ", header=None).values
+df_data_yago_a3 = pd.read_csv("../Data/1st order/A_lT.txt", sep=" ", header=None).values
+df_data_yago_sigma3 = pd.read_csv("../Data/1st order/Sigma_lT.txt", sep=" ", header=None).values
+df_data_yago_phi3 = pd.read_csv("../Data/1st order/phi_lT.txt", sep=" ", header=None).values
 
 A_yago3 = df_data_yago_a3[:, 1]
 u_yago3 = df_data_yago_a3[:, 0]
@@ -479,12 +506,12 @@ class NNholo():
         # print("Va_uh_all shape:", self.Va_uh_all.shape)	
 
 #	 Verify network outputs
-        # test_input = torch.randn(10, 3)
-        # out_a = self.net_a(test_input)
-        # out_b = self.net_b(test_input)
-        # print(f"\nTest outputs:")
-        # print(f"net_a output shape: {out_a.shape}")
-        # print(f"net_b output shape: {out_b.shape}")		
+        test_input = torch.randn(10, 3)
+        out_a = self.net_a(test_input)
+        out_b = self.net_b(test_input)
+        print(f"\nTest outputs:")
+        print(f"net_a output shape: {out_a.shape}")
+        print(f"net_b output shape: {out_b.shape}")		
         
         # Defines the custom NN for the potential V. It takes 1 input (phi) and outputs 1 value (V(phi)), and has 4 hidden layers with 16 units each.  
         self.V = CustomNN(n_input_units = 1, hidden_units = [16,16,16,16] ,actv = nn.SiLU, n_output_units = 1)
@@ -647,7 +674,7 @@ class NNholo():
 
         return [eq1, eq2, eq3, eq4 , eq5, eq6, eq7]
     
-
+    # This is where we're actually finding the loss using the equations.
     def get_loss(self):
 
         residuals = self.get_residuals()

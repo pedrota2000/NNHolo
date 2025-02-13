@@ -198,32 +198,65 @@ class CustomBundleSolver1D(BundleSolver1D):
         self.metrics_history['phi_max'].append(f[5][-49: ].mean().detach().item())
         return loss_r2
 
-        # f = vs, vA, vphi, sigma, A, phi. Should add a coefficient. STRONG ENERGY CONDITION ON ENERGY-MOMENTUM TENSOR
+        # f = vS, vA, vphi, sigma, A, phi. Should add a coefficient (here it's 10^-7. 
+        
+        # SEC ON ENERGY-MOMENTUM TENSOR
     # def additional_loss(self,r,f,x): # r = residues of the ODEs | f = A, sigma, etc | x = u, S, T
     #     phi=f[5].reshape(-1,1)
-    #     #print(cosa)
     #     V = self.V(phi)
-    #     Dphi = f[2]**2
-    #     A = f[4]
-    #     u = x[0]
+    #     Dphi = (f[2].reshape(-1,1))**2
+    #     A = f[4].reshape(-1,1)
+    #     u = x[0].reshape(-1,1)
 
-    #     print("phi: ",phi)
-    #     print("V: ",V)
-    #     print("Derivative of phi: ",Dphi)
-    #     print("A: ",A)
-    #     print("u: ",u)
-    #     print("Residues: ",r)
-    #     print("NN parameters: ",f)
-    #     print("Boundary parameters: ",x)
+    #     add_loss = -3*V - (1/2)*(u**2)*A*Dphi
+    #     sum_loss = torch.mean(nn.functional.relu(-add_loss))
 
-    #     #DV = diff(self.V(cosa), cosa, shape_check=False)
-    #    #DDV = diff(diff(self.V(cosa),cosa,shape_check=False),cosa,shape_check=False)
-    #     add_loss = 2*V + (u**4)*A*Dphi
-    #     print(add_loss)
-    #     sum_loss = nn.ReLU(-add_loss)
-    #     print(sum_loss)
+    #     if 'additional_loss' not in self.metrics_history:
+    #         self.metrics_history['additional_loss'] = []
+        
+    #     self.metrics_history['additional_loss'].append(sum_loss.item())  # Tensor to Python scalar
 
-    #     return sum_loss
+
+    #     return 10**(-4) * sum_loss
+
+        # NEC ON RICCI
+    # def additional_loss(self,r,f,x): # r = residues of the ODEs | f = A, sigma, etc | x = u, S, T
+
+    #     A = (f[4].reshape(-1,1))**2
+    #     Sigma = f[3].reshape(-1,1)
+    #     u = x[0].reshape(-1,1)
+    #     vSigma = (diff(f[0], x[0], order=1)).reshape(-1,1)
+        
+    #     add_loss = Sigma * (-3 * A * vSigma)/4
+    #     sum_loss = torch.mean(nn.functional.relu(-add_loss))
+
+    #     if 'additional_loss' not in self.metrics_history:
+    #         self.metrics_history['additional_loss'] = []
+        
+    #     self.metrics_history['additional_loss'].append(sum_loss.item())  # Tensor to Python scalar
+
+    #     return 10**(-7) * sum_loss
+
+         # SEC ON RICCI
+    # def additional_loss(self,r,f,x): # r = residues of the ODEs | f = A, sigma, etc | x = u, S, T
+
+    #     A = f[4].reshape(-1,1)
+    #     u = x[0].reshape(-1,1)
+    #     vA = f[1].reshape(-1,1)
+    #     vvA = (diff(f[1], x[0], order=1)).reshape(-1,1)
+    #     Sigma = f[3].reshape(-1,1)
+    #     vSigma = f[0].reshape(-1,1)
+        
+
+    #     add_loss = (Sigma/2) * (A * (8 * Sigma - 6 * vSigma) + u * (vA * (-5 * Sigma + 3 * u * vSigma) + u * Sigma * vvA))
+    #     sum_loss = torch.mean(nn.functional.relu(-add_loss))
+
+    #     if 'additional_loss' not in self.metrics_history:
+    #         self.metrics_history['additional_loss'] = []
+        
+    #     self.metrics_history['additional_loss'].append(sum_loss.item())  # Tensor to Python scalar
+
+    #     return 10**(-4) * sum_loss
 
     def _update_best(self, key):
         """Update ``self.lowest_loss`` and ``self.best_nets``
@@ -463,8 +496,8 @@ class NNholo():
         S_true_1= torch.tensor(df_data[init_pt_curve:100:1,1])
         T_true_1= torch.tensor(df_data[init_pt_curve:100:1,0])
 
-        #S_true_2= torch.tensor(df_data[71:100:5,1])4
-        #T_true_2= torch.tensor(df_data[71:100:5,0])
+        # S_true_2= torch.tensor(df_data[71:100:5,1])
+        # T_true_2= torch.tensor(df_data[71:100:5,0])
 
         S_true_3= torch.tensor(df_data[101:200:6,1])
         T_true_3= torch.tensor(df_data[101:200:6,0])
@@ -671,8 +704,10 @@ class NNholo():
             ( u**2 * Sigma * Va + 2 * A * u**2 * Vs- 4 * u * A * Sigma) \
             -(2/3)*(u*Sigma**2)*(u**2 * A* Vp**2 - \
                                 2 * ((1-ORIGP_FLAG)*self.V(phi) + ORIGP_FLAG*V_or(phi)))
+        
+        #eq8 = 3 * u**2 * A * Vs * Vp + Sigma * (-VF + u * (Vp * (u * Va - 3 * A) + u * A * diff(Vp, u, order=1)))
 
-        return [eq1, eq2, eq3, eq4 , eq5, eq6, eq7]
+        return [eq1, eq2, eq3, eq4 , eq5, eq6/Vp, eq7]
     
     # This is where we're actually finding the loss using the equations.
     def get_loss(self):
@@ -691,7 +726,7 @@ class NNholo():
         u, sigma, Va = self.valid_generator.get_examples()
         res = self.solver.get_residuals(u, sigma, Va, best=True)
         dim = int((res[0].shape[0])/16)
-        res_eq = np.zeros((7, 16, dim)) 
+        res_eq = np.zeros((8, 16, dim)) 
         for i, r in enumerate(res):
             res_eq[i, :,:] =r.cpu().detach().reshape(16, dim)
         if display:
@@ -702,13 +737,13 @@ class NNholo():
               
         residuals = self.get_residuals()
         
-        fig, ax = plt.subplots(3,2, figsize=(6,18))
+        fig, ax = plt.subplots(4,2, figsize=(6,18))
         ax = ax.flatten()
 
         vmax = 0.04
 
         levels = np.arange(0, vmax, .001)
-        for eqn in np.arange(6):  
+        for eqn in np.arange(8):  
             im = ax[eqn].imshow( (np.abs(residuals[eqn,:,:].T)),  vmin=0, vmax=vmax, interpolation='bilinear', cmap=cmap)
             ax[eqn].contour(    (np.abs(residuals[eqn,:,:].T)), levels,   extend='both')
             ax[eqn].set_title(f"Eq{eqn+1}")
@@ -769,6 +804,7 @@ class NNholo():
         solution = self.solver.get_solution(best=True)
         phi_h = np.ones(self.S_true.shape)
         true_phi_h = np.ones(self.S_true.shape)
+
         u_max = np.ones(self.S_true.shape)
 
         for i,S in enumerate(self.S_true):
@@ -1091,7 +1127,7 @@ class NNholo():
         plt.show()
         
         if save_plot==True:
-            fig.savefig('DE residuals 1-3.pdf')
+            fig.savefig(f'{self.path} DE residuals 1-3.pdf')
         
         fig = plt.figure()
         for q,i in enumerate(zip(self.Sigma_uh_all, self.Va_uh_all)):
@@ -1106,12 +1142,14 @@ class NNholo():
                 res5 = self.solver.get_residuals(u,Sigma_h , Va_h,  best=True)[4].detach().numpy()
                 res6 = self.solver.get_residuals(u,Sigma_h , Va_h,  best=True)[5].detach().numpy()
                 res7 = self.solver.get_residuals(u,Sigma_h , Va_h,  best=True)[6].detach().numpy()
-                res = [res4,res5,res6, res7]
+                #res8 = self.solver.get_residuals(u,Sigma_h , Va_h,  best=True)[7].detach().numpy()
+                res = [res4,res5,res6, res7] #res8
                    
-                plt.plot(u, res4  , 'b-', alpha=0.1 ,label='Eq4')
+                plt.plot(u, res4  , 'b-', alpha=0.1 ,label='Eq4'  )
                 plt.plot(u, res5 ,   'r-', alpha=0.1, label='Eq5' )
                 plt.plot(u, res6  ,  'g-', alpha=0.1, label='Eq6' )
                 plt.plot(u, res7  ,  'k-', alpha=0.1, label='Eq7' )
+                #plt.plot(u, res8  , 'm-', alpha=0.1, label='Eq8'  )
                 
                 if q==0:
                     plt.legend()
@@ -1120,7 +1158,7 @@ class NNholo():
                     for k in range(len(res)):
                         for j in range(len(res[k])):
                             if abs(res[k][j]) > top:
-                                print('For u =', u[j], ', residual(eq.',k,')=',abs(res[k][j]))
+                                print('For u =', u[j], ', residual(eq.',k+4,')=',abs(res[k][j])) #k+4 because we start from 4th equation
                             
             if max_bound != False:    
                 plt.ylim(bottom,top)
@@ -1129,7 +1167,7 @@ class NNholo():
             plt.ylabel('DE residual')
             
             if save_plot==True:
-                fig.savefig('DE residuals 4-7.pdf')
+                fig.savefig(f'{self.path} DE residuals 4-8.pdf')
         
     def render(self):
 

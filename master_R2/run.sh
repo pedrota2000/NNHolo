@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=NNHolo
+#SBATCH --job-name=NNH_06
 #SBATCH -p gpu
 #SBATCH --gpus-per-task=2
 #SBATCH --cpus-per-task=16
@@ -12,7 +12,7 @@
 module purge
 source /mnt/home/ptarancon/python_env/neurodiffeq/bin/activate
 # Run the first PyTorch training script
-python 2_nets_run.py --gpu 0 
+python NNholo_contrastive_loc_u_nyx_big_run.py --gpu 0 
 
 # Run the second PyTorch training script
 #python3 train_2.py --gpu 0 &

@@ -1593,7 +1593,7 @@ class NNholo():
         plt.show()
         
         if save_fig==True:
-            fig.savefig('DE residuals 1-3.pdf')
+            fig.savefig(f'{self.path}/DE residuals 1-3.pdf')
         
         fig = plt.figure()
         for q,i in enumerate(zip(self.Sigma_uh_all.cpu(), self.Va_uh_all.cpu())):
@@ -1633,7 +1633,7 @@ class NNholo():
             plt.ylabel('DE residual')
             
             if save_fig==True:
-                fig.savefig('DE residuals 4-7.pdf')
+                fig.savefig(f'{self.path}/DE residuals 4-7.pdf')
     def compare_to_yago2(self, fontsize = 14, legend_fontsize=14, n_fontsize=14, wspace=0.5):
         from pathlib import Path
         from matplotlib.ticker import ScalarFormatter

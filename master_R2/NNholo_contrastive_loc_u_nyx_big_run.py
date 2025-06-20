@@ -40,10 +40,10 @@ solver_nets = [128,128,128,128]
 V_nets = [64,64,64,64,64]
 u_pts = 128
 
-epochs = 500_000
-reps = 1
+epochs = 250_000
+reps = 4
 
-loop_index = 1_000_000
+loop_index = 3_500_000
 lr_vals = [1.5e-5, 1e-5]
 
 sofT_list = []
@@ -73,12 +73,12 @@ for j in range(reps):
 
     potential_cb = BestValidationCallback()
 
-    # if j<=3:
-    #     lr = lr_vals[0]
-    # else:
-    #     lr = lr_vals[1]
+    if j<=3:
+        lr = lr_vals[0]
+    else:
+        lr = lr_vals[1]
         
-    # c.update_optimizer(lr)
+    c.update_optimizer(lr)
 
     c.solver.fit(max_epochs=epochs, 
                  callbacks=[potential_cb, scheduler_cb], 

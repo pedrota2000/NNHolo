@@ -2,8 +2,8 @@
 #SBATCH --job-name=NNH_07
 #SBATCH -p gpu
 #SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-task=16
-#SBATCH --ntasks=4
+#SBATCH --cpus-per-task=32
+#SBATCH --ntasks=1
 #SBATCH --mem=64G
 #SBATCH --constraint=h100  # if you want a particular type of GPU
 #SBATCH --time=6-1

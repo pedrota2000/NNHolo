@@ -14,4 +14,4 @@ For this purpose, our code finds the solution to the differential equations and 
 ## How to run the code
 The code is placed insied the master folder, where a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess. 
 
-## Results
+

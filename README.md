@@ -1,7 +1,13 @@
 # NNHolo #
+
+[![arXiv](https://img.shields.io/badge/arXiv-2403.14763-b31b1b.svg)](https://arxiv.org/abs/2403.14763)
+
 ## Introduction
 
 NNHolo is a Deep-Learning tool based on neurodiffeq package (https://github.com/NeuroDiffGym/neurodiffeq) aimed to solve holography inverse problems. In particular, it is constructed to recover the bulk geometry taking as inputs the thermodynamical properties of a given Gauge Theory.
+
+A detailed discussion of the method and its applications can be found in [this paper](https://arxiv.org/abs/2403.14763).
+
 
 ## How does this work?
 

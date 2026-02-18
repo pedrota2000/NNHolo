@@ -82,16 +82,28 @@ def DV_or(phi, phim=1.0):
             phim**4*(12*phi**8*(-45 + 4*phi**2) + phiq**2*(9 + 4*phi**2) -
            4*phiq*phi**4*(-9 + 8*phi**2))))
 
-def DDV_or(phi,phim=1.0):
+
+def DDV_or(phi, phim=None):
+    if phim is None:
+        phim = 1.0
     phiq = 10
-    p=phi
-    return -3 - p**2 - (11 * p**10) / (64 * phiq**2) + \
-            (15 * p**8 * (27 * phim**2 + phiq)) / (64 * phim**2 * phiq**2) - \
-            (7 * p**6 * (72 * phim**2 - 16 * phim**4 + phiq)) / (96 * phim**4 * phiq) - \
-            (5 * p**4 * (12 * phim**4 - 3 * phiq + 2 * phim**2 * phiq)) / (16 * phim**4 * phiq)
+    
+    # Pre-calculating recurring sub-expressions for clarity
+    expr_a = 8 + (8 * phi**2) / phim**2 - (48 * phi**4) / phiq
+    expr_b = (16 * phi) / phim**2 - (192 * phi**3) / phiq
+    expr_c = 64 * phi + (64 * phi**3) / phim**2 - (384 * phi**5) / phiq
+    expr_d = 64 + (192 * phi**2) / phim**2 - (1920 * phi**4) / phiq
+    expr_e = 96 + 32 * phi**2 + (16 * phi**4) / phim**2 - (64 * phi**6) / phiq
+    expr_f = 16 / phim**2 - (576 * phi**2) / phiq
 
+    # Building the main terms
+    term1 = 192 * phi * expr_b * expr_a
+    term2 = 48 * (expr_a)**2
+    term3 = 2 * (expr_c)**2
+    term4 = 2 * expr_d * expr_e
+    term5 = 24 * phi**2 * (2 * (expr_b)**2 + 2 * expr_f * expr_a)
 
-
+    return (1/3072) * (term1 + term2 - term3 - term4 + term5)
 
 
 class Super_net(nn.Module):

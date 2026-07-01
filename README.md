@@ -11,15 +11,21 @@ NNHolo is a Deep-Learning tool based on neurodiffeq package (https://github.com/
 A detailed discussion of the method and its applications can be found in [paper I](https://arxiv.org/abs/2403.14763) (crossover and mild first and second order phase transitions) and [paper II](https://arxiv.org/abs/2606.30117) (more agressive phase transitions, including a false vacuum regime).
 
 
-## How does this work?
+## How does it work?
 
-NNHolo is aimed to recover a scalar potential $V(\phi)$ in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature $T$ and the entropy $S$ from the value of the solutions on the black brane horizon, thus obtaining the equation of state of the dual QFT at the boundary of AdS given by the relation $S(T)$. However, trying to get the scalar field potential by only knowing the boundary conditions is a much more difficult problem. 
+NNHolo is a machine learning aproach aimed to recover a scalar potential $V(\phi)$ in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. It is based on physics-informed neural networks (PINNs).
 
-For this purpose, our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points of the entropy as a function of the temperature. To do so, we have used solution bundles (implemented in neurodiffeq) to solve the differential equations for different boundary conditions (that are given by the points along S(T)) at the same time. Once a solution is found, another NN is introduced to make a guess for the scalar potential. Thus, all these functions are then introduced in the differential equations to compute the residuals, which square is going to be the loss function of the model. The optimization proccess to minimize the loss function is done using adam optimizer.
+By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature $T$ and the entropy $S$ from the value of the solutions on the black brane horizon, thus obtaining the equation of state of the dual QFT at the boundary of AdS given by the relation $S(T)$. However, trying to get the scalar field potential $V(\phi)$ by only knowing the boundary conditions set by the equation of state $S(T)$ is a much more difficult problem (inversion problem). 
+
+For this purpose, the PINN implementation in our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points of the entropy as a function of the temperature. To do so, we have used solution bundles (implemented in neurodiffeq) to solve the differential equations for different boundary conditions (that are given by the points along S(T)) at the same time. Once a solution is found, another NN is introduced to make a guess for the scalar potential $V(\phi)$. Thus, all these functions are then substituted in the differential equations to compute the residuals. The square of the residuals defines then the loss function of our model. The optimization proccess to minimize the loss function is done using Adam optimizer.
+
+In [paper I](https://arxiv.org/abs/2403.14763), this code is used to sucessfully recover the bulk scalar potential from boundary data $S(T)$ corresponding to crossover, and first and second order phase transitions. Stronger first order phase transitions are very challenging for the code of paper I.
+
+In [paper II](https://arxiv.org/abs/2606.30117), an improved, more complex version of the code is used to sucessfully recover the scalar potential from boundary data $S(T)$ corresponding to strong first order phase transitions in regimes characterized by large hierarchies and the presence of false vacua.
 
 
 
 ## How to run the code
-The code is placed insied the master folder, where a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess. 
+The codes is placed insied the master folder, where a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess. 
 
 

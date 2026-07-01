@@ -8,12 +8,12 @@ Paper II: [![arXiv](https://img.shields.io/badge/arXiv-2606.30117-b31b1b.svg)](h
 
 NNHolo is a Deep-Learning tool based on neurodiffeq package (https://github.com/NeuroDiffGym/neurodiffeq) aimed to solve holography inverse problems. In particular, it is constructed to recover the bulk geometry taking as inputs the thermodynamical properties of a given Gauge Theory.
 
-A detailed discussion of the method and its applications can be found in [this paper](https://arxiv.org/abs/2403.14763) and [this paper](https://arxiv.org/abs/2606.30117).
+A detailed discussion of the method and its applications can be found in [paper I](https://arxiv.org/abs/2403.14763) (crossover and mild first and second order phase transitions) and [paper II](https://arxiv.org/abs/2606.30117) (more agressive phase transitions, including a false vacuum regime).
 
 
 ## How does this work?
 
-NNHolo is aimed to recover a scalar potential in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature and the entropy from the value of the solutions on the horizon. However, trying to get the scalar field potential by only knowing the boundary conditions is a much more difficult problem. 
+NNHolo is aimed to recover a scalar potential $V(\phi)$ in the bulk for a holographic theory which is Einstein's gravity + scalar field in AdS. By constructing all the possible black brane solutions and solving the Einstein's equations (non-linear second order ordinary differential equations), one is able to read off the temperature $T$ and the entropy $S$ from the value of the solutions on the black brane horizon, thus obtaining the equation of state of the dual QFT at the boundary of AdS given by the relation $S(T)$. However, trying to get the scalar field potential by only knowing the boundary conditions is a much more difficult problem. 
 
 For this purpose, our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points of the entropy as a function of the temperature. To do so, we have used solution bundles (implemented in neurodiffeq) to solve the differential equations for different boundary conditions (that are given by the points along S(T)) at the same time. Once a solution is found, another NN is introduced to make a guess for the scalar potential. Thus, all these functions are then introduced in the differential equations to compute the residuals, which square is going to be the loss function of the model. The optimization proccess to minimize the loss function is done using adam optimizer.
 

@@ -34,7 +34,7 @@ The codes are placed inside the paper_1 and paper_2 folders, respecively.
   
     - For the near-false-vacuum regime ($\phi_M=0.8$), the code pipeline is defined in _NNholo_near_FV.py_ and called in _train.py_. The training is performed similarly to the paper I models.
       
-    - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. One finds a _FB_main_pipeline.py_ and _FB_training.ipynb_ for the FB phase. For the SB phase, the pipeline is defined in _SB_main_pipeline.py_ and called in _SB_train_model.py_. For an analysis of the results of the SB training phase, we include also a _run_and_analyze_SB_pipeline.ipynb_ notebook.
+    - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. For the FB phase the pipeline is defined in _FB_main_pipeline.py_ and executed in _FB_training.ipynb_ for the FB phase. For the SB phase, the pipeline is defined in _SB_main_pipeline.py_ and executed in _SB_train_model.py_. For an analysis of the results of the SB training phase, we include also a _run_and_analyze_SB_pipeline.ipynb_ notebook.
 
 
 For more details, see [paper I](https://arxiv.org/abs/2403.14763) and [paper II](https://arxiv.org/abs/2606.30117), respectively.

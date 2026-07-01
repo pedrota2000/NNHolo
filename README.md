@@ -1,12 +1,14 @@
 # NNHolo #
 
-[![arXiv](https://img.shields.io/badge/arXiv-2403.14763-b31b1b.svg)](https://arxiv.org/abs/2403.14763)
+Paper I: [![arXiv](https://img.shields.io/badge/arXiv-2403.14763-b31b1b.svg)](https://arxiv.org/abs/2403.14763) Gravitational duals from equations of state
+
+Paper II: [![arXiv](https://img.shields.io/badge/arXiv-2606.30117-b31b1b.svg)](https://arxiv.org/abs/2606.30117) Gravitational Duals from Equations of State II: Large Hierarchies and False Vacua
 
 ## Introduction
 
 NNHolo is a Deep-Learning tool based on neurodiffeq package (https://github.com/NeuroDiffGym/neurodiffeq) aimed to solve holography inverse problems. In particular, it is constructed to recover the bulk geometry taking as inputs the thermodynamical properties of a given Gauge Theory.
 
-A detailed discussion of the method and its applications can be found in [this paper](https://arxiv.org/abs/2403.14763).
+A detailed discussion of the method and its applications can be found in [this paper](https://arxiv.org/abs/2403.14763) and [this paper](https://arxiv.org/abs/2606.30117).
 
 
 ## How does this work?

@@ -19,13 +19,18 @@ By constructing all the possible black brane solutions and solving the Einstein'
 
 For this purpose, the PINN implementation in our code finds the solution to the differential equations and recovers the scalar field potential by taking as input pairs of points of the entropy as a function of the temperature. To do so, we have used solution bundles (implemented in neurodiffeq) to solve the differential equations for different boundary conditions (that are given by the points along S(T)) at the same time. Once a solution is found, another NN is introduced to make a guess for the scalar potential $V(\phi)$. Thus, all these functions are then substituted in the differential equations to compute the residuals. The square of the residuals defines then the loss function of our model. The optimization proccess to minimize the loss function is done using Adam optimizer.
 
-In [paper I](https://arxiv.org/abs/2403.14763), this code is used to sucessfully recover the bulk scalar potential from boundary data $S(T)$ corresponding to crossover, and first and second order phase transitions. Stronger first order phase transitions are very challenging for the code of paper I.
+- In [paper I](https://arxiv.org/abs/2403.14763), this code is used to sucessfully recover the bulk scalar potential from boundary data $S(T)$ corresponding to crossover, and first and second order phase transitions. Stronger first order phase transitions are very challenging for the code of paper I.
 
-In [paper II](https://arxiv.org/abs/2606.30117), an improved, more complex version of the code is used to sucessfully recover the scalar potential from boundary data $S(T)$ corresponding to strong first order phase transitions in regimes characterized by large hierarchies and the presence of false vacua.
+- In [paper II](https://arxiv.org/abs/2606.30117), an improved, more complex version of the code is used to sucessfully recover the scalar potential from boundary data $S(T)$ corresponding to strong first order phase transitions in regimes characterized by large hierarchies and the presence of false vacua.
 
 
 
 ## How to run the code
-The codes is placed insied the master folder, where a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess. 
+The codes are placed inside the paper_1 and paper_2 folders, respecively. 
+
+- Inside paper_1/master, a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess.
+  
+- Inside paper_2, there are two regimes: near-false-vacuum, and false vacuum.
+    - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. One finds a $\texttt{FB\_main\_pipeline.py}$ and $\texttt{FB\_training.ipynb}$ for the FB phase. For the SB phase, the pipeline is defined in $\texttt{SB\_main\_pipeline.py}$ and called in $\texttt{SB\_train\_model.py}$. For an analysis of the results of the SB training phase, we include also a $\texttt{run\_and\_analyze\_SB\_pipeline.ipynb}$ notebook.
 
 

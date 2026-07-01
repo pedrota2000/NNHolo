@@ -31,6 +31,6 @@ The codes are placed inside the paper_1 and paper_2 folders, respecively.
 - Inside paper_1/master, a python file called NNHolo can be found. In thise file we have include a class that, given thermodymic curve, defines the model and prepares it for the training proccess.
   
 - Inside paper_2, there are two regimes: near-false-vacuum, and false vacuum.
-    - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. One finds a $\texttt{FB\_main\_pipeline.py}$ and $\texttt{FB\_training.ipynb}$ for the FB phase. For the SB phase, the pipeline is defined in $\texttt{SB\_main\_pipeline.py}$ and called in $\texttt{SB\_train\_model.py}$. For an analysis of the results of the SB training phase, we include also a $\texttt{run\_and\_analyze\_SB\_pipeline.ipynb}$ notebook.
+    - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. One finds a _FB_main_pipeline.py_ and _FB_training.ipynb_ for the FB phase. For the SB phase, the pipeline is defined in _SB_main_pipeline.py_ and called in _SB_train_model.py_. For an analysis of the results of the SB training phase, we include also a _run_and_analyze_SB_pipeline.ipynb_ notebook.
 
 

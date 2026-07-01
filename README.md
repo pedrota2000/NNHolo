@@ -6,9 +6,9 @@ Paper II: [![arXiv](https://img.shields.io/badge/arXiv-2606.30117-b31b1b.svg)](h
 
 ## Introduction
 
-NNHolo is a Deep-Learning tool based on physics-informed neural networks (PINNs) built on the neurodiffeq package (https://github.com/NeuroDiffGym/neurodiffeq) aimed to solve holography inverse problems. In particular, it is constructed to recover the bulk geometry taking as inputs the thermodynamical properties of a given Gauge Theory.
+NNHolo is a Deep-Learning tool based on physics-informed neural networks (PINNs) built with the [neurodiffeq](https://github.com/NeuroDiffGym/neurodiffeq) package aimed to solve inverse problems in the field of holography and the AdS/CFT correspondence. In particular, it is constructed to recover the bulk geometry taking as inputs the thermodynamical properties of a given Gauge Theory.
 
-A detailed discussion of the method and its applications can be found in [paper I](https://arxiv.org/abs/2403.14763) (crossover and mild first and second order phase transitions) and [paper II](https://arxiv.org/abs/2606.30117) (more agressive phase transitions, including a false vacuum regime).
+A detailed discussion of the method and its applications can be found in [paper I](https://arxiv.org/abs/2403.14763) (thermodinamical equations of state showing crossovers and mild first and second order phase transitions) and [paper II](https://arxiv.org/abs/2606.30117) (solving for more agressive phase transitions, including large hierarchies and false vacua).
 
 
 ## How does it work?
@@ -32,11 +32,12 @@ The codes are placed inside the paper_1 and paper_2 folders, respecively.
   
 - Inside paper_2, there are two regimes: near-false-vacuum, and false vacuum.
   
-    - For the near-false-vacuum regime ($\phi_M=0.8$), the code pipeline is defined in _NNholo_near_FV.py_ and called in _train.py_. The training is performed indentically to the paper I models.
+    - For the near-false-vacuum regime ($\phi_M=0.8$), the code pipeline is defined in _NNholo_near_FV.py_ and called in _train.py_. The training is performed similarly to the paper I models.
       
     - For the false vacuum regime ($\phi_M = 0.55$), the training of the model is performed in two phases corresponding to the first branch (FB) and second branch (SB) of the equation of state curve $S(T)$. One finds a _FB_main_pipeline.py_ and _FB_training.ipynb_ for the FB phase. For the SB phase, the pipeline is defined in _SB_main_pipeline.py_ and called in _SB_train_model.py_. For an analysis of the results of the SB training phase, we include also a _run_and_analyze_SB_pipeline.ipynb_ notebook.
 
 
 For more details, see [paper I](https://arxiv.org/abs/2403.14763) and [paper II](https://arxiv.org/abs/2606.30117), respectively.
 
+The pretrained models are available upon request to the authors.
 

@@ -1,8 +1,8 @@
 # NNHolo #
 
-Paper I: [![arXiv](https://img.shields.io/badge/arXiv-2403.14763-b31b1b.svg)](https://arxiv.org/abs/2403.14763) Gravitational duals from equations of state
+[![arXiv](https://img.shields.io/badge/arXiv-2403.14763-b31b1b.svg)](https://arxiv.org/abs/2403.14763) Gravitational duals from equations of state (paper I)
 
-Paper II: [![arXiv](https://img.shields.io/badge/arXiv-2606.30117-b31b1b.svg)](https://arxiv.org/abs/2606.30117) Gravitational Duals from Equations of State II: Large Hierarchies and False Vacua
+[![arXiv](https://img.shields.io/badge/arXiv-2606.30117-b31b1b.svg)](https://arxiv.org/abs/2606.30117) Gravitational Duals from Equations of State II: Large Hierarchies and False Vacua (paper II)
 
 ## Introduction
 

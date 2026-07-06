@@ -544,7 +544,7 @@ class NNholo():
                  init_pt_curve = 55, end_pt_curve = None, delta = 0.0, curriculum = 1.0, nets_loc_var = 4, \
                  add_index = True, step = 1, solver_nets = [64,64,64], V_nets = [32,32,32,32], sampling_method = 'chebyshev2-noisy', \
                  force_V_min_coef = 0, force_DV_DDV_min_coef = 0, force_phi_H_mono_coef = 0, force_V0_coef=0, \
-                 mono_phi_coef = 1e-5, steep_step = 100, staging_addloss_epoch = 0, seed = 'random'):
+                 mono_phi_coef = 1e-5, steep_step = 100, staging_addloss_epoch = 0, phim = None, seed = 'random'):
         
         if seed != 'random':  
             random.seed(seed)
@@ -566,6 +566,7 @@ class NNholo():
         self.init_pt_curve = init_pt_curve
         self.end_pt_curve = end_pt_curve
         self.u_pts = u_pts
+        self.phim = phim
 
         self.mono_phi_coef = mono_phi_coef
 
@@ -728,6 +729,7 @@ class NNholo():
                                             nets=self.nets,
                                             n_batches_valid=0,
                                             eq_param_index=(),
+                                            phim=self.phim,
                                             V = self.V,
                                             contrastive_weights = self.contrastive_w,
                                             u_pts= self.u_pts,
@@ -2011,6 +2013,7 @@ class NNholo():
                                            n_batches_valid=0,
                                            eq_param_index=(),
                                            V=self.V,
+                                           phim=self.phim,
                                            contrastive_weights=self.contrastive_w,
                                            u_pts=self.u_pts,
                                            force_V_min_coef=self.force_V_min_coef,

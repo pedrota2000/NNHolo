@@ -39,5 +39,5 @@ The codes are placed inside the paper_1 and paper_2 folders, respecively.
 
 For more details, see [paper I](https://arxiv.org/abs/2403.14763) and [paper II](https://arxiv.org/abs/2606.30117), respectively.
 
-The pretrained models are available upon request to the authors (contact details are available in the papers).
+The pretrained models are available in the results directory (a light version with NN weights and the optimizer state), enough to load and visualize results. Full models with the loss function are also available upon request to the authors (contact details are available in the papers).
 

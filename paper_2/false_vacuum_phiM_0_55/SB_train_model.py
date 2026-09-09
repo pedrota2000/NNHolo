@@ -50,7 +50,7 @@ order = 3
 
 
 # Epochs for training, and amount of repetitions (reps) of "train -> save -> load -> train -> save -> load -> ... (if necessary)"
-check_epochs = 10
+check_epochs = 0  # If check_epochs = 0, and reps = 1, then one just loads the pretrained model.
 epochs = 10_000
 reps = 1
 
@@ -58,7 +58,7 @@ reps = 1
 # Epoch number at which to restart the training from the pretrained SB model (if necessary). 
 # If None, then the training will start from scratch (and the initial load_path is that of the FB pretrained model).
 
-loop_index = 23828600  # None
+loop_index = 27028800  # None 
 
 
 
@@ -83,8 +83,11 @@ for k in range(len(phim_param)):
 
 
 # Path for the weights of pretrained FB NN model (will be frozen at this stage of training). 
-# Such a model can be obtained by training the FB model from scratch with the FB_training.ipynb notebook, or by loading the pretrained FB model file upon request the authors.
-first_branch_load_path = f'{parent_dir}/FB_results/NN_first_branch_epochs_1968656'
+# Such a model can be obtained by training the FB model from scratch with the FB_training.ipynb notebook, 
+# or by loading the pretrained FB model (light version - only weights). 
+# For the full file with the loss request the authors of the paper.
+
+first_branch_load_path = f'{parent_dir}/FB_results/NN_first_branch_NEW_epochs_1968656_light'
 
 
 
@@ -92,7 +95,10 @@ epochs_cumulative = 1_400_000
 for j in range(reps):
 
     if loop_index is not None:
-        second_branch_load_path = f'{path_results}/NN_second_branch_epochs_{loop_index}'
+        # Again, for the full model with loss curves saved request the authors of the paper. 
+        # The light version is enough for visualization of the NN parametrization of the solutiosn and the recovered potential.
+        second_branch_load_path = f'{path_results}/NN_second_branch_epochs_{loop_index}_light'
+
     else:
         second_branch_load_path = first_branch_load_path
         loop_index = 0

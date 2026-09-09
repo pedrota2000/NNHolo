@@ -21,12 +21,6 @@ import itertools
 from scipy.interpolate import CubicSpline, PchipInterpolator
 from scipy.integrate import quad
 
-from neurodiffeq.utils import set_tensor_type
-
-from typing import List
-import re
-
-
 large = 20
 med = 16
 small = 12
@@ -68,10 +62,6 @@ plt.rcParams.update(params)
 
 IN_COLAB = torch.cuda.is_available()
 
-
-
-
-
 def V_or(phi, phim = None):
     if phim == None:
         phim = 1.0
@@ -82,9 +72,8 @@ def V_or(phi, phim = None):
     term2 = (96 +8*(2*phi)**2 + (2*phi)**4/phim**2 - (2*phi)**6/phiq)**2
     return (1/4)*(1/768)*(term1 - term2)
 
-def DV_or(phi, phim=None):
-    if phim is None:
-        phim = 1.0
+def DV_or(phi):
+    phim = 1.0
     phiq = 10
     return (-(1/(3*phim**4*phiq**2))*phi*(phiq**2*phi**4*(-9 + 2*phi**2)+
             2*phim**2*phiq*phi**4*(3*phiq+72*phi**2 - 10*phi**4) +
@@ -113,10 +102,26 @@ def DDV_or(phi, phim=None):
 
     return (1/3072) * (term1 + term2 - term3 - term4 + term5)
 
+class Super_net(nn.Module):
+    def __init__(self, n_input_units, hidden_units, actv, n_output_units,diss_net):
+        super(Super_net, self).__init__()
+        self.core_net = FCNN(n_input_units=n_input_units, hidden_units=hidden_units,n_output_units = n_output_units,
+                             actv = actv)
+        self.Diss_net = diss_net
+        
 
-
-
-
+    def forward(self, x):
+        #ind = torch.linspace(0,len(x[:,1])-1,len(x[:,1]-1)).reshape(-1,1)
+        #if not(x[0,1] == x[1,1]):
+        #    x[:,1] = (torch.max(x[:,1]+1e-15).detach().item()-x[:,1])/(torch.max(x[:,1]).detach().item()-torch.min(x[:,1]).detach().item())
+        #    x[:,2] = (torch.max(x[:,2]+1e-15).detach().item()-x[:,2])/(torch.max(x[:,2]).detach().item()-torch.min(x[:,2]).detach().item())
+        #x = torch.cat((x[:,0].reshape(-1,1),(x[:,1]/x[:,2]).reshape(-1,1),(x[:,2]).reshape(-1,1)),dim = 1)
+        #print(x)
+        #diss_out = self.Diss_net(diss_input)
+        #diss_out = (-torch.min(diss_out)+diss_out)/(torch.max(diss_out)-torch.min(diss_out))
+        #net_in = torch.cat((x[:,0].reshape(-1,1),diss_out[:,0].reshape(-1,1),diss_out[:,1].reshape(-1,1)),dim =1)
+        x = self.core_net(x)
+        return x
 
 class CustomNN(nn.Module):
     def __init__(self, n_input_units, hidden_units, actv, n_output_units):
@@ -225,17 +230,17 @@ class TrackNetParameters(ActionCallback):
     def __call__(self, solver):
         # For mu
         for i in range(6):
-            self.mu_history.append(copy.deepcopy(solver.nets[i].mu.cpu().detach().numpy()))
+            self.mu_history.append(copy.deepcopy(solver.nets[i].mu.detach().cpu().numpy()))
 
             # For weights (w)
             first_layer = solver.nets[i].NN[0]
             grads_hist = []
-            self.w_history.append(copy.deepcopy(first_layer.weight.cpu().detach().numpy()))
+            self.w_history.append(copy.deepcopy(first_layer.weight.detach().cpu().numpy()))
     
             for name, param in solver.nets[i].named_parameters():
                 if param.grad is not None:
                     # grads_net.append(copy.deepcopy(param.grad.detach().abs().mean().item()))  # mean absolute gradient
-                    val=copy.deepcopy(param.grad.cpu().detach().abs().reshape(-1,1).numpy())
+                    val=copy.deepcopy(param.grad.detach().abs().reshape(-1,1).detach().numpy())
                     grads_hist.append(val)
     
             self.grad_history.append(np.concatenate(grads_hist))
@@ -250,25 +255,66 @@ class TrackParameters(ActionCallback):
         
     def __call__(self, solver):
         # For mu
-        self.mu_history.append(copy.deepcopy(solver.V.mu.cpu().detach().numpy()))
+        self.mu_history.append(copy.deepcopy(solver.V.mu.detach().cpu().numpy()))
         
         # For sigma
-        self.sigma_history.append(copy.deepcopy(solver.V.sigma.cpu().detach().numpy()))
+        self.sigma_history.append(copy.deepcopy(solver.V.sigma.detach().cpu().numpy()))
 
         # For weights (w)
         first_layer = solver.V.layers[0]
         grads_hist = []
-        self.w_history.append(copy.deepcopy(first_layer.weight.cpu().detach().numpy()))
+        self.w_history.append(copy.deepcopy(first_layer.weight.detach().cpu().numpy()))
 
         for name, param in solver.V.named_parameters():
             if param.grad is not None:
                 # grads_net.append(copy.deepcopy(param.grad.detach().abs().mean().item()))  # mean absolute gradient
-                val=copy.deepcopy(param.grad.cpu().detach().abs().reshape(-1,1).numpy())
+                val=copy.deepcopy(param.grad.detach().abs().reshape(-1,1).detach().numpy())
                 grads_hist.append(val)
 
         self.grad_history.append(np.concatenate(grads_hist))
 
+# class V_commons(nn.Module):
+#     def __init__(self, n_input_units=1, hidden_units= [16,16,16,16], actv = nn.SiLU, n_output_units=1, order=3):
+#         super(V_commons, self).__init__()
+        
+#         self.V1 = CustomNN(n_input_units = n_input_units, hidden_units =hidden_units  ,actv = actv, n_output_units = n_output_units)
+#         self.dense=nn.Linear(order,1, bias=True)       
+#         self.alpha = nn.Parameter(torch.tensor([0.5]))
+#         self.order=order
+        
+#     def forward(self,x):
 
+#         V1 = self.V1(x)
+
+#        # print(x.shape)
+        
+#         z = torch.cat([x**(i+1) for i in range(self.order)], dim=1)  # Shape: [100, 3]
+#         V2 = self.dense(z)
+        
+#         return self.alpha*V1 + (1-self.alpha)* V2
+
+# class FCNN_commons(nn.Module):
+#     def __init__(self, n_input_units=1, hidden_units= [16,16,16,16], actv = nn.SiLU, n_output_units=1, order=3):
+#         super(FCNN_commons, self).__init__()
+        
+#         self.NN1 = FCNN(n_input_units = n_input_units, hidden_units =hidden_units  ,actv = actv, n_output_units = n_output_units)
+        
+#         self.dense=nn.Linear(order,1, bias=True)  
+#         self.alpha = nn.Parameter(torch.tensor([0.5]))
+#         self.order=order
+        
+#     def forward(self,x):
+
+#         #print(x[:,0].shape)
+#         u = x[:,0].reshape(-1,1)
+#         #print(u.shape)
+
+#         out1 = self.NN1(x)
+#         z = torch.cat([u**(i+1) for i in range(self.order)], dim=1)  # Shape: [100, 3]
+#         #print(z.shape)
+#         out2 = self.dense(z)
+        
+#         return self.alpha * out1 + (1-self.alpha) * out2
 
 class MeshGenerator(BaseGenerator):
 
@@ -300,8 +346,8 @@ class MeshGenerator(BaseGenerator):
 
 class minmaxScaler():
   def __init__(self, x):
-    self.minx = x.min().cpu().detach().item()
-    self.maxx = x.max().cpu().detach().item()
+    self.minx = x.min().detach().item()
+    self.maxx = x.max().detach().item()
     self.x = x
 
   def transform(self):
@@ -337,42 +383,22 @@ class Store_MSE_Loss(ActionCallback):
             self.mse_loss_history.append((np.array(r)**2).mean())
 
 class CustomBundleSolver1D(BundleSolver1D):
-    def __init__(self, contrastive_weights=None, u_pts = 48, 
-                 V0_th_coef=0.0, DV0_th_coef=0.0, DDV0_th_coef=0.0, 
-                 V_FV_th_coef=0.0, DV_FV_th_coef=0.0, DDV_FV_th_coef=0.0,
-                 mono_phi_coef=1e-5, steep_step=100, phim=0.55, *args, **kwargs):
+    def __init__(self, contrastive_weights=None, u_pts = 48, V0_th_coef=0.0, mono_phi_coef=1e-5, steep_step=100, *args, **kwargs):
 
-        torch.set_default_dtype(torch.float32)
         self.V = kwargs.pop('V', None)
         
         self.V0_th_coef = V0_th_coef
-        self.DV0_th_coef = DV0_th_coef
-        self.DDV0_th_coef = DDV0_th_coef
-
-        self.V_FV_th_coef = V_FV_th_coef
-        self.DV_FV_th_coef = DV_FV_th_coef
-        self.DDV_FV_th_coef = DDV_FV_th_coef
-
 
         self.mono_coef = mono_phi_coef
         self.steep_step = steep_step
-        self.phim = phim
         
         self.count = 0
         super().__init__( *args, **kwargs)
-
-
         self.metrics_history['r2_loss'] = []
         self.metrics_history['phi_max'] = []
         self.metrics_history['add_loss'] = []
         self.metrics_history['monotonic_phi_add_loss'] = []
         self.metrics_history['V0_th_add_loss'] = []
-        self.metrics_history['DV0_th_add_loss'] = []
-        self.metrics_history['DDV0_th_add_loss'] = []
-
-        self.metrics_history['V_FV_th_add_loss'] = []
-        self.metrics_history['DV_FV_th_add_loss'] = []
-        self.metrics_history['DDV_FV_th_add_loss'] = []
 
        # self.metrics_history['V_alpha_param'] = [float(self.V.alpha.detach().numpy())]
 
@@ -383,27 +409,6 @@ class CustomBundleSolver1D(BundleSolver1D):
         self.sofT_pts = int(self.batch_size/self.u_pts)
         
         self.contrastive_weights=contrastive_weights
-
-
-
-        phi_mock = np.linspace(0,1.0, 100000)
-        Vth = V_or(phi_mock, phim=self.phim)
-        DVth = DV_or(phi_mock, phim=self.phim)
-        DDVth = DDV_or(phi_mock, phim=self.phim)
-
-        self.Vth_min = min(Vth)
-        indx_min = np.argmin(Vth)
-        self.DVth_min = DVth[indx_min]
-        self.DDVth_min = DDVth[indx_min]
-
-        print('Vth_min = ', self.Vth_min, ' at phi = ', phi_mock[indx_min])
-        print('DVth_min = ', self.DVth_min)
-        print('DDVth_min = ', self.DDVth_min)
-
-
-    # def get_examples(self) -> List[torch.Tensor]:
-    #     List[torch.Tensor] = [c.to(self.device) for c in List[torch.Tensor]]
-    #     pass  # pragma: no cover
     
 
     def _set_loss_fn(self, criterion):
@@ -428,6 +433,7 @@ class CustomBundleSolver1D(BundleSolver1D):
             loss_r2 = (w * r**2).mean()
         else:
             loss_r2 = (r**2).mean() 
+
         
         self.metrics_history['r2_loss'].append(loss_r2.cpu().detach().item())
         self.metrics_history['phi_max'].append(f[5][99].cpu().detach().item())
@@ -436,73 +442,30 @@ class CustomBundleSolver1D(BundleSolver1D):
     
     def additional_loss(self,r,f,x):
 
+
         # Force BC for the potential at phi=0 --> V(0), V'(0), V''(0) 
 
-        if self.V0_th_coef != 0.0 or self.DV0_th_coef != 0.0 or self.DDV0_th_coef != 0.0:
+        if self.V0_th_coef == 0.0:
+            V_th_add_loss = torch.tensor([0.0]) 
+        else:
             cosa=f[5][0].reshape(-1,1)* 0.0
             #print(cosa)
             V = self.V(cosa)
             DV = diff(self.V(cosa), cosa, shape_check=False)
             DDV = diff(diff(self.V(cosa),cosa,shape_check=False),cosa,shape_check=False)
 
+            V0_th_add_loss = self.V0_th_coef * ((3 + DDV[-1])**2 + (0 - DV[-1])**2 + (3 + V[-1])**2)
 
-        if self.V0_th_coef == 0.0:
-            V0_th_add_loss = torch.tensor([0.0]) 
-        else:
-            V0_th_add_loss = self.V0_th_coef * ((3 + DDV[-1])**2)  
-        
-        if self.DV0_th_coef == 0.0:
-            DV0_th_add_loss = torch.tensor([0.0])
-        else:
-            DV0_th_add_loss = self.DV0_th_coef * ((0 - DV[-1])**2)
-
-        if self.DDV0_th_coef == 0.0:
-            DDV0_th_add_loss = torch.tensor([0.0])
-        else:
-            DDV0_th_add_loss = self.DDV0_th_coef * ((3 + V[-1])**2)
+            ##### phi_H ordering along Z
+            # phiH = f[5][:99]
+            # diffs = phiH[1:]-phiH[:-1]
+            # add_loss = torch.sum(torch.relu(-diffs))
             
-        
-        full_V0_addloss = V0_th_add_loss + DV0_th_add_loss + DDV0_th_add_loss
+            #### Force derivatives of the residuals to be zero #
+            # derivs = []
+            # res = torch.sum(r,dim =1)
+            # derivs = diff(res,x[0],order = 1,shape_check = False)**2
 
-
-    ########### Inform about the position of the V False Vacuum minimum ##########
-        if self.V_FV_th_coef != 0.0 or self.DV_FV_th_coef != 0.0 or self.DDV_FV_th_coef != 0.0:
-
-            p = f[5].reshape(self.u_pts, self.sofT_pts)  #shape (48,70)
-            pH = p[0,:]
-            p_last = pH[-1].reshape(-1,1)
-
-            Vth_min = torch.tensor(self.Vth_min, dtype=torch.float32)
-            Vnn_min = self.V(p_last)
-
-            DVmin_nn = diff(self.V(p_last), p_last, shape_check=False)
-            DDVmin_nn = diff(self.V(p_last),p_last,shape_check=False, order=2)
-
-            DVmin_th = torch.tensor(self.DVth_min, dtype=torch.float32)
-            DDVmin_th = torch.tensor(self.DDVth_min, dtype=torch.float32)
-
-
-            if self.global_epoch == 0:
-                print('Vmin (u=1, (S,T)=(0,0)) = ', Vnn_min.item(), ' at phi = ', p_last.item(), ' with Vth_min = ', Vth_min.item())
-                print('--------------------------------------------------------------------------')
-
-
-        if self.V_FV_th_coef != 0:
-            V_min_addloss = self.V_FV_th_coef * ((Vnn_min - Vth_min)**2)
-        else:
-            V_min_addloss = torch.tensor([0.0])
-
-        if self.DV_FV_th_coef != 0:
-            DV_min_addloss = self.DV_FV_th_coef * (DVmin_nn - DVmin_th)**2
-        else:
-            DV_min_addloss = torch.tensor([0.0])
-
-        if self.DDV_FV_th_coef != 0:
-            DDV_min_addloss = self.DDV_FV_th_coef * (DDVmin_nn - DDVmin_th)**2
-        else:
-            DDV_min_addloss = torch.tensor([0.0])
-
-        full_V_FV_addloss = V_min_addloss + DV_min_addloss + DDV_min_addloss
 
 
         #### Ordering of ALL phi(u) monotonically increasig with Z (for all u=u0 values, phi(u0)_(T_i,S_i), phi(u0)_(T_{i+1},S_{i+1}), ...)
@@ -530,22 +493,14 @@ class CustomBundleSolver1D(BundleSolver1D):
             monotonic_addloss = torch.tensor([0.0])
 
         
-        add_loss = monotonic_addloss + full_V0_addloss + full_V_FV_addloss
+        add_loss = monotonic_addloss + V0_th_add_loss
 
         self.metrics_history['monotonic_phi_add_loss'].append((monotonic_addloss).cpu().detach().item())
         self.metrics_history['V0_th_add_loss'].append((V0_th_add_loss).cpu().detach().item())
-        self.metrics_history['DV0_th_add_loss'].append((DV0_th_add_loss).cpu().detach().item())
-        self.metrics_history['DDV0_th_add_loss'].append((DDV0_th_add_loss).cpu().detach().item())
-        self.metrics_history['V_FV_th_add_loss'].append((V_min_addloss).cpu().detach().item())
-        self.metrics_history['DV_FV_th_add_loss'].append((DV_min_addloss).cpu().detach().item())
-        self.metrics_history['DDV_FV_th_add_loss'].append((DDV_min_addloss).cpu().detach().item())
-
 
         self.metrics_history['add_loss'].append((add_loss).cpu().detach().item())
 
         return add_loss
-    
-
 
     def _update_best(self, key):
         r"""Update ``self.lowest_loss`` and ``self.best_nets``
@@ -635,43 +590,69 @@ class CustomBundleSolver1D(BundleSolver1D):
             if not flag:
                 bar.update(1)
 
+# IMPORT DATA
+# df_data_yago_a1 = pd.read_csv("../Data/1st order/A_hT.txt", sep=" ", header=None).values
+# df_data_yago_sigma1 = pd.read_csv("../Data/1st order/Sigma_hT.txt", sep=" ", header=None).values
+# df_data_yago_phi1 = pd.read_csv("../Data/1st order/phi_hT.txt", sep=" ", header=None).values
+
+# A_yago1 = df_data_yago_a1[:, 1]
+# u_yago1 = df_data_yago_a1[:, 0]
+# Sigma_yago1 = df_data_yago_sigma1[:, 1]
+# phi_yago1 = df_data_yago_phi1[:, 1]
 
 
+# #point 2 (mid point)
+# df_data_yago_a2 = pd.read_csv("../Data/1st order/A_mT.txt", sep=" ", header=None).values
+# df_data_yago_sigma2 = pd.read_csv("../Data/1st order/Sigma_mT.txt", sep=" ", header=None).values
+# df_data_yago_phi2 = pd.read_csv("../Data/1st order/phi_mT.txt", sep=" ", header=None).values
 
-def set_tensor_type(device=None, float_bits=32):
-    """Set the default torch tensor type to be used with neurodiffeq.
+# A_yago2 = df_data_yago_a2[:, 1]
+# u_yago2 = df_data_yago_a2[:, 0]
+# Sigma_yago2 = df_data_yago_sigma2[:, 1]
+# phi_yago2 = df_data_yago_phi2[:, 1]
 
-    :param device: Either "cpu", "cuda" or "cuda:x" ("gpu") where "x" is the device number; defaults to "cuda" if available.
-    :type device: str
-    :param float_bits: Length of float numbers. Either 32 (float) or 64 (double); defaults to 32.
-    :type float_bits: int
+# #point 3 (left point)
+# df_data_yago_a3 = pd.read_csv("../Data/1st order/A_lT.txt", sep=" ", header=None).values
+# df_data_yago_sigma3 = pd.read_csv("../Data/1st order/Sigma_lT.txt", sep=" ", header=None).values
+# df_data_yago_phi3 = pd.read_csv("../Data/1st order/phi_lT.txt", sep=" ", header=None).values
 
-    .. note:
-        The function calls ``torch.set_default_tensor_type`` under the hood.
-        Therefore the ``device`` and ``float_bits`` also becomes default tensor type for PyTorch.
-    """
-    if not isinstance(float_bits, int):
-        raise ValueError(f"float_bits must be int, got {type(float_bits)}")
-    if float_bits == 32:
-        torch.set_default_dtype(torch.float32)
-    elif float_bits == 64:
-        torch.set_default_dtype(torch.float64)
-    else:
-        raise ValueError(f"float_bits must be 32 or 64, got {float_bits}")
+# A_yago3 = df_data_yago_a3[:, 1]
+# u_yago3 = df_data_yago_a3[:, 0]
+# Sigma_yago3 = df_data_yago_sigma3[:, 1]
+# phi_yago3 = df_data_yago_phi3[:, 1]
 
-    if device is None:
-        if torch.cuda.is_available():
-            device = "cuda"
-        elif torch.backends.mps.is_available():
-            device = "mps"
-        else:
-            device = "cpu"
-    
-    cuda_regex = re.compile(r'cuda(?::\d+)?')
-    if device != "cpu" and device!="mps" and not cuda_regex.match(device):
-        raise ValueError(f"Unknown device '{device}'; device must be either 'cuda', 'mps', 'cuda:x' where x is the device number, 'cpu'")
 
-    torch.set_default_device(device)
+# Sigma_yago_all = [Sigma_yago1, Sigma_yago2, Sigma_yago3]
+# A_yago_all = [A_yago1, A_yago2, A_yago3]
+# phi_yago_all = [phi_yago1, phi_yago2, phi_yago3]
+
+# u_yago=u_yago1 #same as u_yago2,3
+
+# DA=[]
+# [DA.append(np.gradient(A_yago_all[i],u_yago)) for i in range(3)]
+
+T_h=[]
+S_h=[]
+#[T_h.append(DA[i][-1]/(-4*np.pi* u_yago[-1]**2)) for i in range(3)]
+
+#[S_h.append((np.pi*Sigma_yago_all[i]**3)[-1]) for i in range(3)]
+
+#crossover
+#S_yago = [8.80154741176382, 1.2506823519737085, 0.17257280631479724] 
+#T_yago = [0.48423108257748665, 0.2883770837025976, 0.15629231178160138] 
+#phi_uh_yago= [0.6, 1, 1.13]
+
+#3of5
+S_yago = [8.939014410418975, 1.42689,  0.31734643273483476] 
+T_yago = [0.4867126785278015, 0.395869, 0.26805164866639136] 
+phi_uh_yago= [0.6, 1.4114516577290581, 1.528]
+
+Sigma_uh_yago=[]
+Va_uh_yago=[]
+
+for i in range(len(S_yago)):
+    Sigma_uh_yago.append((S_yago[i]/np.pi)**(1/3))
+    Va_uh_yago.append((-T_yago[i]*4*np.pi))
     
 
 # DEFINE THE WHOLE RUTINE
@@ -680,17 +661,9 @@ class NNholo():
     def __init__(self, data_path, saving_path, contrastive_weights=None, n_points = 69, T_min=0.001, u_pts = 48,\
                  init_pt_curve = 55, end_pt_curve = None, delta = 0.0, curriculum = 1.0, nets_loc_var = 4, \
                  add_index = True, step = 1, solver_nets = [64,64,64], V_nets = [32,32,32,32], sampling_method = 'chebyshev2-noisy', \
-                 V0_th_coef=0.0, DV0_th_coef=0.0, DDV0_th_coef=0.0, 
-                 V_FV_th_coef=0.0, DV_FV_th_coef=0.0, DDV_FV_th_coef=0.0,
-                 phim=0.55, mono_phi_coef = 1e-5, steep_step = 100, optimizer='Adam', load_optimizer=True,\
-                 seed = None, device = "cpu"):
+                 V0_th_coef=0.0, mono_phi_coef = 1e-5, steep_step = 100):
     
-        if seed is None:
-            seed = np.random.randint(0, 2**32 - 1)
-            print('Random initial seed:', seed)
-        else:
-            print('Using fixed seed:', seed)
-
+        seed = 2
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -698,28 +671,6 @@ class NNholo():
         # For CUDA (if using GPU)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-
-        torch.set_default_dtype(torch.float32)
-
-
-
-
-        if device is not None:
-            set_tensor_type(device= device, float_bits=32)
-            self.device = device
-        else:
-            if torch.cuda.is_available():
-                self.device = torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
-            else:
-                self.device = torch.device("cpu")
-
-
-        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        # if str(self.device) == 'cpu':
-        #     self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-        print('Using device:', self.device)
 
         self.delta = delta
         self.curriculum = curriculum
@@ -731,19 +682,8 @@ class NNholo():
         self.u_pts = u_pts
 
         self.V0_th_coef = V0_th_coef
-        self.DV0_th_coef = DV0_th_coef
-        self.DDV0_th_coef = DDV0_th_coef
-
-        self.V_FV_th_coef = V_FV_th_coef
-        self.DV_FV_th_coef = DV_FV_th_coef
-        self.DDV_FV_th_coef = DDV_FV_th_coef
-
         self.mono_phi_coef = mono_phi_coef
         self.steep_step = steep_step
-
-        self.load_optimizer = load_optimizer
-
-        self.phim = phim
 
         
         if contrastive_weights is not None:
@@ -776,12 +716,11 @@ class NNholo():
             
         if suffix_data_path == ".txt":
             df_data = pd.read_csv(data_path, sep=" ", header=None).values
-            
-            split_data = np.loadtxt(data_path) # np.array([row[0].split('\t') for row in df_data], dtype=np.float64)
+            split_data = np.array([row[0].split('\t') for row in df_data], dtype=np.float64)
 
             print('File is .txt')
-            S_all = torch.tensor(split_data[::,1], dtype=torch.float32)
-            T_all = torch.tensor(split_data[::,0], dtype=torch.float32)
+            S_all = torch.tensor(split_data[::,1])
+            T_all = torch.tensor(split_data[::,0])
             
             
             self.S_true_all = torch.cat([S_all],dim = 0)[::step]
@@ -808,17 +747,16 @@ class NNholo():
         plt.scatter(new_T, new_S/new_T**3, s=6, color='r')
 
         if self.end_pt_curve is not None:
-            self.S_true_all = torch.tensor(new_S, dtype=torch.float32)[self.init_pt_curve:self.end_pt_curve:step]
-            self.T_true_all = torch.tensor(new_T, dtype=torch.float32)[self.init_pt_curve:self.end_pt_curve:step]
+            self.S_true_all = torch.tensor(new_S)[self.init_pt_curve:self.end_pt_curve:step]
+            self.T_true_all = torch.tensor(new_T)[self.init_pt_curve:self.end_pt_curve:step]
         else:
-            self.S_true_all = torch.tensor(new_S, dtype=torch.float32)[self.init_pt_curve::step]
-            self.T_true_all = torch.tensor(new_T, dtype=torch.float32)[self.init_pt_curve::step]
+            self.S_true_all = torch.tensor(new_S)[self.init_pt_curve::step]
+            self.T_true_all = torch.tensor(new_T)[self.init_pt_curve::step]
 
         self.Sigma_uh_all = (self.S_true_all/np.pi)**(1/3)
-        self.Va_uh_all = (-self.T_true_all*4*np.pi)        
-
-
-
+        self.Va_uh_all = (-self.T_true_all*4*np.pi)
+        
+        self.SofT_gen = torch.cat((self.Sigma_uh_all.reshape(-1,1),self.Va_uh_all.reshape(-1,1)),dim = 1)
 
         # Affine parameter and uniform sampling routine #
 
@@ -843,7 +781,7 @@ class NNholo():
             s_list.append(s)
             e_list.append(e)
 
-        s_list = torch.tensor(s_list, dtype=torch.float32)
+        s_list = torch.tensor(s_list)
 
         # Interpolate using affine parameter
         self.T_of_s = CubicSpline(s_list.cpu().detach().numpy(), self.Va_uh_all.cpu().detach().numpy())
@@ -854,49 +792,28 @@ class NNholo():
         
 
         # Compute new sampled values
-        self.Va_uh_all = torch.tensor(self.T_of_s(s_sampling), dtype=torch.float32).to(self.device)
-        self.Sigma_uh_all = torch.tensor(self.S_of_s(s_sampling), dtype=torch.float32).to(self.device)
+        self.Va_uh_all = torch.tensor(self.T_of_s(s_sampling))
+        self.Sigma_uh_all = torch.tensor(self.S_of_s(s_sampling))
 
         self.S_true = torch.tensor((self.Sigma_uh_all.cpu().detach().numpy())**3 * np.pi)
         self.T_true = torch.tensor(- (self.Va_uh_all.cpu().detach().numpy())/(4*np.pi))
         
-        Z = torch.tensor(s_sampling, dtype=torch.float32)
-        self.Z = (Z/torch.max(Z)).to(self.device)
-
-
-        # Define the generator for the bundle parameters (Sigma, Va) and the affine parameter Z
-        
+        Z = torch.tensor(s_sampling)
+        self.Z = Z/torch.max(Z)
         
         self.SofT_gen = torch.cat((self.Sigma_uh_all.reshape(-1,1),self.Va_uh_all.reshape(-1,1)),dim = 1)
         if add_index:
-            self.pg = PredefinedGenerator(self.Sigma_uh_all, self.Va_uh_all, self.Z)
+            self.pg = PredefinedGenerator(self.Sigma_uh_all, self.Va_uh_all,self.Z)
         else:
             self.pg = PredefinedGenerator(self.Sigma_uh_all, self.Va_uh_all)
 
-        if optimizer=='LBFGS':
-            self.g1 = Generator1D(u_pts, 0, self.curriculum, method='chebyshev2')
-        else:
-            self.g1 = Generator1D(u_pts, 0, self.curriculum, method=sampling_method )
-        self.g2 = Generator1D(16, 0, 1, method='equally-spaced')
-
-        self.g1.device = self.device
-
-
-        self.train_generator =  MeshGenerator(self.g1, self.pg)
-        self.valid_generator =  MeshGenerator(self.g2, self.pg)
+        self.g1 = Generator1D(u_pts, 0, self.curriculum, method=sampling_method)
         self.g2 = Generator1D(16, 0, 1, method='equally-spaced')
         self.train_generator =  MeshGenerator(self.g1, self.pg)
         self.valid_generator =  MeshGenerator(self.g2, self.pg)
-
-
-
-        # Define the V(phi) NN 
         
         self.V = CustomNN(n_input_units = 1, hidden_units = V_nets ,actv = nn.SiLU, n_output_units = 1)
-
-
-
-        # Set the BC for the ODE system of EFE
+        #self.V = V_commons(n_input_units=1, hidden_units= [16,16,16,16], actv = nn.SiLU, n_output_units=1, order=self.V_order)
 
         self.conditions = [
     NoCondition(),  # no condition on Vs
@@ -907,58 +824,31 @@ class NNholo():
     BundleIVP(0, 0),  #phi(0)=0 #BundleDirichletBVP(0, 0,1, phi_yago[-1])#
 
 ]
-        
-        # Define the NNs for the solutions of the ODE system -> solution = NNsolution(u), one network per dependent variable
-
+        #self.Diss_net = FCNN(n_input_units=3, hidden_units=[4,4],n_output_units = 2,actv = nn.Tanh)
         if add_index:
+            # self.nets = [FCNN(n_input_units=4, hidden_units=solver_nets,n_output_units = 1,
+            #                           actv = nn.Tanh) for _ in range(6)]
+            
             self.nets = [CustomNets(n_input_units=4, hidden_units=solver_nets, n_output_units = 1,
                           actv = nn.Tanh, loc_var = nets_loc_var) for _ in range(6)]
-        else:
-            self.nets = [CustomNets(n_input_units=3, hidden_units=solver_nets, n_output_units = 1,
-                          actv = nn.Tanh, loc_var = nets_loc_var) for _ in range(6)]
-
 
         self.nets_arch = solver_nets
         self.V_arch = V_nets
         
-
-
-        # Define the optimizer for the training
-
-        self.optimizer_choice = optimizer
-
-        if optimizer == 'Adam':
-            self.optimizer = torch.optim.Adam([p for net in self.nets + [self.V] for p in net.parameters()], \
-                            lr=1e-3) #,  betas=(0.9, 0.99))
-            
-        elif optimizer == 'LBFGS':
-            self.optimizer = torch.optim.LBFGS(
-                                [p for net in self.nets + [self.V] for p in net.parameters()],
-                                lr = 1e-1,
-                                max_iter=500,
-                                tolerance_grad=1e-9,
-                                tolerance_change=1e-9,
-                                history_size=50,
-                                line_search_fn='strong_wolfe'
-                            )
-            print('Using LBFGS')
-
-        self.nets = [net.to(self.device) for net in self.nets]
-        self.V = self.V.to(self.device)
-
-
-
-
-
-        # Define the solver with all the previous specifications
-    
+        
+        self.adam = torch.optim.Adam([p for net in self.nets + [self.V] for p in net.parameters()], \
+                        lr=1e-3)#,  betas=(0.9, 0.99))
+        
+        self.lbfgs = torch.optim.LBFGS(OrderedSet([p for net in self.nets + [self.V] for p in net.parameters()]), \
+                        lr=1e-2)
+        
         self.solver = CustomBundleSolver1D( ode_system=self.equations,
                                             conditions=self.conditions,
                                             t_min=self.delta,
                                             t_max=1,
                                             train_generator=self.train_generator,
                                             valid_generator=self.valid_generator,
-                                            optimizer=self.optimizer,
+                                            optimizer=self.adam,
                                             nets=self.nets,
                                             n_batches_valid=0,
                                             eq_param_index=(),
@@ -966,24 +856,9 @@ class NNholo():
                                             contrastive_weights = self.contrastive_w,
                                             u_pts= self.u_pts,
                                             V0_th_coef = self.V0_th_coef,
-                                            DV0_th_coef = self.DV0_th_coef,
-                                            DDV0_th_coef = self.DDV0_th_coef,
-                                            V_FV_th_coef = self.V_FV_th_coef,
-                                            DV_FV_th_coef = self.DV_FV_th_coef,
-                                            DDV_FV_th_coef = self.DDV_FV_th_coef,
                                             mono_phi_coef = self.mono_phi_coef,
                                             steep_step = self.steep_step,
-                                            phim=self.phim,
                                         )
-        
-
-
-
-
-
-    # Utils, definition of the equations and saving and plottoing tools (below)
-
-
     def sofT_curve(self):
         
         print('S_min: ', min(self.S_true))
@@ -1027,12 +902,12 @@ class NNholo():
     def update_optimizer(self, lr = None):
         print('inside beg')
         if lr == None:
-            for g in self.optimizer.param_groups:
+            for g in self.adam.param_groups:
                 print('Actual learning rate: ', g['lr'])
                 print(g['lr'])
         else:
             print('indised else')
-            for g in self.optimizer.param_groups:
+            for g in self.adam.param_groups:
                 g['lr'] = lr
                 print('Learning rate updated to: ', g['lr'])
                 
@@ -1107,10 +982,7 @@ class NNholo():
             print(f'Mean of residuals : {round((torch.cat(res) ** 2).mean().item(),9)}.')
         return res_eq
     
-
-
-    
-    def plot_2D_residuals(self, color=None, xlabel= 'epochs', ylabel = r'$\log_{10}\mathcal{L}$', fontsize = 14, \
+    def plot_residuals(self, color=None, xlabel= 'epochs', ylabel = r'$\log_{10}\mathcal{L}$', fontsize = 14, \
                   figsize=(8,6), thick=0.8, left_x_lim=0):
         
         fig1 = plt.figure(figsize=figsize)
@@ -1141,6 +1013,49 @@ class NNholo():
         trained_epochs = len(self.solver.metrics_history['train_loss'])
         fig1.savefig(f'{self.path}/res_2D_{trained_epochs}.pdf')
         plt.show()
+
+    # def plot_solutions(self, color=None, xlabel= 'epochs', ylabel = r'$\log_{10}\mathcal{L}$', fontsize = 14, \
+    #               figsize=(8,6), thick=0.8, left_x_lim=0):
+
+    #     # Create figure and 1x3 subplot layout
+    #     fig1, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=False)
+
+    #     u = self.g1.get_examples().cpu()
+    #     phi_solution = []
+    #     A_solution = []
+    #     Sigma_solution = []
+    #     for i in range(len(self.Va_uh_all.cpu())):
+    #         S = self.Sigma_uh_all[i].cpu().detach().numpy()*np.ones_like(u.detach().numpy())
+    #         T = self.Va_uh_all[i].cpu().detach().numpy()*np.ones_like(u.detach().numpy())
+    #         Z = self.Z[i].cpu().detach().numpy()*np.ones_like(u.detach().numpy())
+    #         #print(tf.solver.get_residuals(u,S,T))
+    #         sol = self.solver.get_solution(best = True)
+    #         phi_solution.append(sol(u.detach().numpy(),S,T,Z)[5].cpu().detach().numpy())
+    #         A_solution.append(sol(u.detach().numpy(),S,T,Z)[4].cpu().detach().numpy())
+    #         Sigma_solution.append(sol(u.detach().numpy(),S,T,Z)[3].cpu().detach().numpy())
+
+    #     # Generate colors from the rainbow colormap
+    #     colors = plt.cm.rainbow(np.linspace(0, 1, len(phi_solution)))
+
+    #     # Loop through all solutions and plot them in each panel
+    #     for i in range(len(phi_solution)):
+    #         u_vals = u.cpu().detach().numpy()  # Convert u to numpy once
+    #         axes[0].plot(u_vals, phi_solution[i], color=colors[i])
+    #         axes[1].plot(u_vals, A_solution[i], color=colors[i])
+    #         axes[2].plot(u_vals, Sigma_solution[i], color=colors[i])
+
+    #     # Set titles for each subplot
+    #     axes[0].set_title(r'$\phi$ Solution')
+    #     axes[1].set_title(r'$A$ Solution')
+    #     axes[2].set_title(r'$\Sigma$ Solution')
+
+    #     # Add a colorbar to indicate the solution index
+    #     sm = plt.cm.ScalarMappable(cmap="rainbow", norm=plt.Normalize(vmin=0, vmax=len(phi_solution)-1))
+    #     cbar = fig1.colorbar(sm, ax=axes.ravel().tolist(), orientation='vertical')
+    #     cbar.set_label("Solution Index")
+    #     trained_epochs = len(self.solver.metrics_history['train_loss'])
+    #     fig1.savefig(f'{self.path}/solutions_{trained_epochs}.pdf')
+    #     plt.show()
 
     
     def plot_solutions(self, step=1, save_fig=True):
@@ -1296,7 +1211,6 @@ class NNholo():
         
             fig1.savefig(f'{self.path}/loss_epoch {trained_epochs}_prettier.pdf')
 
-
     def plot_residuals_in_u_color(self, step=1, save_fig=True):
 
         u = torch.linspace(0.0,1.0,100)
@@ -1308,10 +1222,7 @@ class NNholo():
         sm.set_array([])
         
         fig,ax = plt.subplots(1,3, figsize=(12,4))
-
         for q,i in enumerate(zip(self.Sigma_uh_all, self.Va_uh_all)):
-
-        
             Sigma_h = i[0].cpu().detach()*torch.ones_like(u)
             Va_h = i[1].cpu().detach()*torch.ones_like(u)
             Z = self.Z[q].cpu().detach()*torch.ones_like(u)
@@ -1524,157 +1435,7 @@ class NNholo():
         
         if save_fig == True:
             fig2.savefig(f'{self.path}/V_epoch {trained_epochs}.pdf')
-
-
-
-    def compute_current_V(self, save_fig = True):
-
-        model = self
-
-        model.plot_loss(save_fig=False)
-
-        u = torch.linspace(0,1,250)
-        var_names = ['Vs', 'Va', 'Vp', r'$\Sigma$', 'A', r'$\phi$']
-
-        step = 1
-
-        RES = []
-        phi_solutions = []
-        step = step
-
-        j = 5  # phi solution
-        for i in range(len(model.Va_uh_all)):
-            S = model.Sigma_uh_all[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-            T = model.Va_uh_all[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-            Z = model.Z[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-
-            sol = model.solver.get_solution(best = True)
-            phi_sol = sol(u,S,T,Z)[j]
-            phi_solutions.append(phi_sol.cpu().detach().numpy())
-
-        phi_last = phi_solutions[-1][-1]
-
-        for i in range(len(model.Va_uh_all)):
-            S = model.Sigma_uh_all[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-            T = model.Va_uh_all[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-            Z = model.Z[i].cpu().detach().numpy()*np.ones_like(u.cpu().detach().numpy())
-
-            sol = model.solver.get_solution(best = True)
-            phi_sol = sol(u,S,T,Z)[j]
-            phi_solutions.append(phi_sol.cpu().detach().numpy())
-
-        phi_last_2 = phi_solutions[-1][-1]
-
-        num_curves = len(model.Va_uh_all)
-
-
-        # cmap = cm.get_cmap('rainbow', num_curves)
-        # norm = mcolors.Normalize(vmin=0, vmax=num_curves - 1)
-        # sm = cm.ScalarMappable(cmap=cmap, norm=norm)
-        # sm.set_array([])
-
-        # fig= plt.figure(figsize=(5,4))
-        # for i in range(num_curves):
-        #     #if i == step:# == 0:
-        #     if i % step == 0:
-
-        #         col = cmap(i / (num_curves - 1))
-                
-        #         y = u.cpu().detach().numpy()
-        #         z = phi_solutions[i]
-
-        #         plt.plot(y, z, color=col, linewidth=2, label=i)
-        #         plt.title(var_names[j])
-        # plt.scatter(1.0, phi_last, c = 'k', s=20)
-        # plt.xlabel('u')
-        # # plt.legend(loc=(1.1,0.3))
-        # plt.show()
-
-
-        phi = torch.linspace(0.0, phi_last, 10000, requires_grad=True).reshape(-1,1)
-        V_nn = model.solver.V(phi)
-        V_nn_2 = model.solver.V(phi)
-
-        DV_nn = diff(V_nn.reshape(-1, 1), phi, order=1)
-        DDV_nn = diff(V_nn.reshape(-1, 1), phi, order=2)
-
-        DV_nn_np = DV_nn.detach().numpy().reshape(-1,)
-        DDV_nn_np = DDV_nn.detach().numpy().reshape(-1,)
-
-        DV_nn_2 = diff(V_nn_2.reshape(-1, 1), phi, order=1)
-        DDV_nn_2 = diff(V_nn_2.reshape(-1, 1), phi, order=2)
-
-        DV_nn_2_np = DV_nn_2.detach().numpy().reshape(-1,)
-        DDV_nn_2_np = DDV_nn_2.detach().numpy().reshape(-1,)
-
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True)
-
-        phi_np = phi.detach().numpy().reshape(-1,)
-        Vnn_np = V_nn.detach().numpy().reshape(-1,)
-        Vnn_2_np = V_nn_2.detach().numpy().reshape(-1,)
-
-
-
-
-        phi_th = np.linspace(0,0.8,100000)
-
-        V_th = V_or(phi_th, phim=0.55)
-        DV_th = DV_or(phi_th, phim=0.55)
-        DDV_th = DDV_or(phi_th, phim=0.55)
-
-        Vmin_th = min(V_th)
-        phi_FV_th = phi_th[np.argmin(V_th)]
-        DVmin_th = DV_th[np.argmin(V_th)]
-        DDVmin_th = DDV_th[np.argmin(V_th)]
-
-
-        # --- 1) Potential ---
-        axes[0].plot(phi_np, Vnn_np, label='V_nn', color='blue')
-        axes[0].plot(phi_np, Vnn_2_np, label='V_nn_2', color='red', linestyle='dashed')
-        axes[0].plot(phi_th, V_th, label='Th', color='green')
-        axes[0].axvline(phi_last, color='red', linestyle='dashed', label=rf'$\phi_\text{{last}}^\text{{NN}} = {phi_last:.5f}$')
-        axes[0].axvline(phi_th[np.argmin(V_th)], color='green', linestyle='dotted', label=rf'$\phi_\text{{last}}^\text{{Th}} = {phi_th[np.argmin(V_th)]:.5f}$')
-        axes[0].axhline(V_nn[-1].detach().numpy(), color='blue', linestyle='dotted', label=r'$V_\text{min}^\text{NN}$')
-        axes[0].axhline(Vmin_th, color='green', linestyle='dotted', label=r'$V_\text{min}^\text{Th}$')
-
-        axes[0].set_title('V(φ)')
-        axes[0].legend()
-        axes[0].grid()
-
-        # --- 2) First derivative ---
-        axes[1].plot(phi_np, DV_nn_np, label="V_nn'", color='blue')
-        axes[1].plot(phi_np, DV_nn_2_np, label="V_nn_2'", color='red', linestyle='dashed')
-        axes[1].plot(phi_th, DV_th, label="Th'", color='green')
-        axes[1].axvline(phi_last, color='red', linestyle='dashed', label=r'$\phi_\text{last}^\text{NN}$')
-        axes[1].axvline(phi_th[np.argmin(V_th)], color='green', linestyle='dotted', label=r'$\phi_\text{last}^\text{Th}$')
-        axes[1].axhline(DV_nn[-1].detach().numpy(), color='blue', linestyle='dotted', label=r'$V_\text{min}^\text{NN}$')
-        axes[1].axhline(DVmin_th, color='green', linestyle='dotted', label=r'$V_\text{min}^\text{Th}$')
-        axes[1].set_title("V'(φ)")
-        axes[1].legend()
-        axes[1].grid()
-
-        # --- 3) Second derivative ---
-        axes[2].plot(phi_np, DDV_nn_np, label="V_nn''", color='blue')
-        axes[2].plot(phi_np, DDV_nn_2_np, label="V_nn_2''", color='red', linestyle='dashed')
-        axes[2].plot(phi_th, DDV_th, label="Th''", color='green')
-        axes[2].axvline(phi_last, color='red', linestyle='dashed', label=r'$\phi_\text{last}^\text{NN}$')
-        axes[2].axvline(phi_th[np.argmin(V_th)], color='green', linestyle='dotted', label=r'$\phi_\text{last}^\text{Th}$')
-        axes[2].axhline(DDV_nn[-1].detach().numpy(), color='blue', linestyle='dotted', label=r'$V_\text{min}^\text{NN}$')
-        axes[2].axhline(DDVmin_th, color='green', linestyle='dotted', label=r'$V_\text{min}^\text{Th}$')
-        axes[2].set_title("V''(φ)")
-        axes[2].legend()
-        axes[2].grid()
-
-        for ax in axes:
-            ax.set_xlabel('φ')
-
-        plt.tight_layout()
-        plt.show()
-
-        if save_fig:
-            fig.savefig(f'{model.path}/V_DV_DDV_nn_vs_th_epochs_{model.solver.global_epoch}.png', dpi=300)
-
-            
+        
         
     def plot_colored_sofT(self, save_fig=True, colormap = 'vidris', fontsize = 14, n_fontsize = 14, \
                           dot_size=10, thick=0.8, figsize = (8,6)):
@@ -1727,10 +1488,6 @@ class NNholo():
             fig.savefig(f'{self.path}/colored_soft_{trained_epochs}.pdf')
 
         plt.show()
-
-
-
-
         
     def plot_s_over_phi_h(self, color = 'k', fontsize = 14, n_fontsize = 14, \
                           dot_size=10, thick=0.8, figsize = (8,6)):
@@ -1773,10 +1530,88 @@ class NNholo():
 
         fig.savefig(f'{self.path}/colored_sofT_epochs_{c.solver.global_epoch}.pdf')
 
+        
+    def compare_to_yago(self, fontsize = 14, legend_fontsize=14, n_fontsize=14, wspace=0.5, yago_linewidth = 3, yago_style = '--'):
+        
+        for i in range(3):
+            
+            fig, ax = plt.subplots(1,2, figsize=(16,7))
+            pt=i+1
+            #u = np.linspace(0.0001, 1, len(u_yago))
+            u = u_yago
+            #S_yago_sol = 1.42689 
+            #T_yago_sol = 0.395869
+            #phi_uh_yago=1.4114516577290581
 
+            #print('here', phi_uh_yago)
 
+            S_tt=S_yago[pt-1]
+            T_tt=T_yago[pt-1]
 
+            Sigma_h = (S_tt*np.ones_like(u)/np.pi)**(1/3)
+            Va_h = (-T_tt*np.ones_like(u)*4*np.pi)
 
+            #Sigma_h = .78*np.ones_like(u)
+            #Va_h = -10.0*np.ones_like(u)
+
+            solution = self.solver.get_solution(best=True)
+
+            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_h,  Va_h, to_numpy=True)
+
+            print('Point %i' %pt, '; phi_h_yago = %f' %phi_uh_yago[pt-1])
+
+            ax[0].plot(u, Sigma, 'r-', label=r'$\tilde{\Sigma}_{NN}$', zorder=2)
+            ax[0].plot(u_yago , Sigma_yago_all[pt-1], 'r', linestyle = yago_style, label=r'$\tilde{\Sigma}_{th}$', linewidth = yago_linewidth, zorder=1)
+
+            ax[0].plot(u, A, 'b-', label=r'$\tilde{A}_{NN}$', zorder=2)
+            ax[0].plot(u_yago, A_yago_all[pt-1], 'b', linestyle = yago_style, label = r'$\tilde{A}_{th}$', linewidth = yago_linewidth, zorder=1) 
+
+            ax[0].plot(u, phi, 'g-', label=r'$\phi_{NN}$', zorder=2)
+            ax[0].plot(u_yago, phi_yago_all[pt-1], 'g', linestyle = yago_style, label=r'$\phi_{th}$', linewidth = yago_linewidth, zorder=1)
+            #ax[0].ticklabel_format(axis='y', style='sci', scilimits=(1,1))
+           
+            ax[0].set_xlabel('u', fontsize = fontsize)
+            ax[0].set_ylabel('ODEs solutions', fontsize = fontsize)
+            ax[0].set_xlim(-0.05,1.05)
+            ax[0].set_ylim(-0.05,max(max(Sigma),max(A),max(phi))+0.05)
+            
+            #ax[0].set_title(title,fontsize = fontsize)
+            ax[0].legend(fontsize = legend_fontsize)
+            #plt.grid()
+            #plt.savefig('solution3.png')
+
+            #ax[1].title('Squared residuals')
+            MSE_Sigma = (1/len(Sigma))*sum((Sigma_yago_all[pt-1]-Sigma)**2)
+            MSE_A = (1/len(A))*sum((A_yago_all[pt-1]-A)**2)
+            MSE_phi = (1/len(phi))*sum((phi_yago_all[pt-1]-phi)**2)
+            
+            rel_err_Sigma = (abs(Sigma_yago_all[pt-1]-Sigma)/Sigma_yago_all[pt-1])
+            rel_err_A = (abs(A_yago_all[pt-1]-A)/A_yago_all[pt-1])
+            rel_err_phi = (abs(phi_yago_all[pt-1]-phi)/phi_yago_all[pt-1])
+            
+            ax[1].plot(u,(Sigma_yago_all[pt-1]-Sigma)**2, color= 'r', label=r'$MSE_{\tilde{\Sigma}}=%.1e$'%MSE_Sigma)
+            ax[1].plot(u,(A_yago_all[pt-1]-A)**2, color= 'b', label=r'$MSE_{\tilde{A}}=%.1e$'%MSE_A)
+            ax[1].plot(u,(phi_yago_all[pt-1]-phi)**2, color= 'g', label=r'$MSE_{\phi}=%.1e$'%MSE_phi)
+            #ax[1].ticklabel_format(axis='y', style='sci', scilimits=(1,1))
+            ax[1].set_xlabel('u',fontsize = fontsize)
+            ax[1].set_ylabel(r'(theory$-$NN)$^2$',fontsize = fontsize)
+            ax[1].set_xlim(0,1)
+            ax[1].yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+            ax[1].ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+            ax[1].yaxis.get_offset_text().set_fontsize(n_fontsize)
+
+            ax[1].legend(fontsize = legend_fontsize)
+            
+            title = r"$(T_{:.0f}, S_{:.0f})=({:.2f}, {:.2f})$".format(i+1,i+1,T_tt, S_tt)
+            plt.suptitle(title, fontsize = fontsize)
+            
+            for ax in ax:
+                ax.tick_params(axis='both', which='major', labelsize=n_fontsize)  # Adjust the font size
+            plt.subplots_adjust(wspace=wspace)  # Increase or decrease the value to adjust the spacing
+            plt.show()
+            
+            fig.savefig(f'/Users/pablo/Desktop/NNholo/To run/January (2024)/Plots paper/DE solution_pt_{i+1}_(phiM=1,best).pdf')
+            
     def plot_V_theory(self, phim = 1):
         
         col=['k','b','g','m','r','y']
@@ -1804,9 +1639,238 @@ class NNholo():
             plt.grid()
             plt.legend()
         plt.show()
+        
+    def plot_residuals_in_u(self, max_bound = 0.05, print_overbound = False, save_fig=False):
+       ### RESIDUAL PLOTS
+        # PICK ANY
+        u = np.linspace(0.0001, 1, 250)
+        
+        if max_bound != False:
+            bottom, top = -max_bound, max_bound
+        
+        fig = plt.figure()
+        for q,i in enumerate(zip(self.Sigma_uh_all.cpu(), self.Va_uh_all.cpu())):
+            Sigma_h = i[0].cpu().detach().numpy()*np.ones_like(u)
+            Va_h = i[1].cpu().detach().numpy()*np.ones_like(u)
+            Z = self.Z[q].cpu().detach().numpy() * np.ones_like(u)
 
+            if q % 5 == 0:
+                #print(q)
+                res1 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[0].cpu().detach().numpy()
+                res2 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[1].cpu().detach().numpy()
+                res3 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[2].cpu().detach().numpy()
+                res = [res1,res2,res3]
 
+                plt.plot(u, res1 , 'r-' ,  alpha=0.1,label='Vs Eq1')
+                plt.plot(u, res2 , 'b-',  alpha=0.1, label='Va Eq2')
+                plt.plot(u, res3 ,'g-', alpha=0.1,label='Vp Eq3')
+                
+                if q==0:
+                    plt.legend()
+                
+                if print_overbound == True:
+                    for k in range(len(res)):
+                        for j in range(len(res[k])):
+                            if abs(res[k][j]) > top:
+                                print('For u =', u[j], ', residual(eq.',k,')=',abs(res[k][j]))
+                            
+            if max_bound != False:    
+                plt.ylim(bottom,top)
+            plt.xlim(0,1)
+            plt.xlabel('u')
+            plt.ylabel('DE residual')
+                
+        plt.show()
+        
+        if save_fig==True:
+            fig.savefig('DE residuals 1-3.pdf')
+        
+        fig = plt.figure()
+        for q,i in enumerate(zip(self.Sigma_uh_all.cpu(), self.Va_uh_all.cpu())):
 
+            Sigma_h = i[0].cpu().detach().numpy()*np.ones_like(u)
+            Va_h = i[1].cpu().detach().numpy()*np.ones_like(u)
+            Z = self.Z[q].cpu().detach().numpy() * np.ones_like(u)
+                
+            if q % 5 ==0:
+                #print(q)
+                
+                res4 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[3].cpu().detach().numpy()
+                res5 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[4].cpu().detach().numpy()
+                res6 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[5].cpu().detach().numpy()
+                res7 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[6].cpu().detach().numpy()
+                #res8 = self.solver.get_residuals(u,Sigma_h , Va_h,Z,  best=True)[7].detach().numpy()
+                res = [res4,res5,res6, res7]
+                   
+                plt.plot(u, res4  , 'b-', alpha=0.1 ,label='Eq4')
+                plt.plot(u, res5 ,   'r-', alpha=0.1, label='Eq5' )
+                plt.plot(u, res6  ,  'g-', alpha=0.1, label='Eq6' )
+                plt.plot(u, res7  ,  'k-', alpha=0.1, label='Eq7' )
+                
+                if q==0:
+                    plt.legend()
+                
+                if print_overbound == True:
+                    for k in range(len(res)):
+                        for j in range(len(res[k])):
+                            if abs(res[k][j]) > top:
+                                print('For u =', u[j], ', residual(eq.',k,')=',abs(res[k][j]))
+                            
+            if max_bound != False:    
+                plt.ylim(bottom,top)
+            plt.xlim(0,1)
+            plt.xlabel('u')
+            plt.ylabel('DE residual')
+            
+            if save_fig==True:
+                fig.savefig('DE residuals 4-7.pdf')
+    def compare_to_yago2(self, fontsize = 14, legend_fontsize=14, n_fontsize=14, wspace=0.5):
+        from pathlib import Path
+        from matplotlib.ticker import ScalarFormatter
+
+        colors = ['#66bb6a', '#558ed5', '#dd6a63', '#dcd0ff', '#ffa726', '#8c5eff', '#f44336', '#00bcd4', '#ffc107', '#9c27b0']
+
+        params = {'axes.titlesize': small,
+                  'legend.fontsize': small,
+                  'figure.figsize': (4,4),
+                  'axes.labelsize': small,
+                  'axes.linewidth': 2,
+                  'xtick.labelsize': small,
+                  'xtick.color' : '#1D1717',
+                  'ytick.color' : '#1D1717',
+                  'ytick.labelsize': small,
+                  'axes.edgecolor':'#1D1717',
+                  'figure.titlesize': med,
+                  'axes.prop_cycle': cycler(color = colors),
+                  'text.usetex': False,
+                  'font.family': 'serif',  # Choose your font family (e.g., "serif", "sans-serif", "monospace")
+                  'font.serif': ['Times']}# Choose your font (e.g., "Times", "Arial", "Computer Modern Roman")}
+
+        # Define your custom colormap with #66bb6a
+        cmap = mcolors.LinearSegmentedColormap.from_list('my_colormap', ['#66bb6a', '#1D1717'])
+        plt.rcParams.update(params)
+        from matplotlib.ticker import ScalarFormatter
+        for i in range(3):
+            
+            fig, ax = plt.subplots(1,2, figsize=(16,7))
+            pt=i+1
+            #u = np.linspace(0.0001, 1, len(u_yago))
+            u = u_yago
+            
+            #S_yago_sol = 1.42689 
+            #T_yago_sol = 0.395869
+            #phi_uh_yago=1.4114516577290581
+
+            #print('here', phi_uh_yago)
+
+            S_tt=S_yago[pt-1]
+            T_tt=T_yago[pt-1]
+
+            Sigma_h = (S_tt*np.ones_like(u)/np.pi)**(1/3)
+            Va_h = (-T_tt*np.ones_like(u)*4*np.pi)
+
+            #Sigma_h = .78*np.ones_like(u)
+            #Va_h = -10.0*np.ones_like(u)
+
+            solution = self.solver.get_solution(best=True)
+
+            Vs, Va, Vp, Sigma, A, phi = solution(u, Sigma_h,  Va_h, to_numpy=True)
+
+            print('Point %i' %pt, '; phi_h_yago = %f' %phi_uh_yago[pt-1])
+
+            ax[0].plot(u, Sigma, 'r-', label=r'$\tilde{\Sigma}_{NN}$')
+            ax[0].plot(u_yago , Sigma_yago_all[pt-1], 'r-.', label=r'$\tilde{\Sigma}_{th}$',linewidth = 3)
+
+            ax[0].plot(u, A, 'b-', label=r'$\tilde{A}_{NN}$')
+            ax[0].plot(u_yago, A_yago_all[pt-1], 'b-.', label = r'$\tilde{A}_{th}$',linewidth = 3) 
+
+            ax[0].plot(u, phi, 'g-', label=r'$\phi_{NN}$')
+            ax[0].plot(u_yago, phi_yago_all[pt-1], 'g-.', label=r'$\phi_{th}$',linewidth = 3)
+            #ax[0].ticklabel_format(axis='y', style='sci', scilimits=(1,1))
+           
+            ax[0].set_xlabel('u', fontsize = fontsize)
+            ax[0].set_ylabel('ODEs solutions', fontsize = fontsize)
+            ax[0].set_xlim(-0.05,1.05)
+            ax[0].set_ylim(-0.05,max(max(Sigma)+0.05,max(A)+0.05,max(phi)+0.05))
+            
+            #ax[0].set_title(title,fontsize = fontsize)
+            ax[0].legend(fontsize = legend_fontsize)
+            #plt.grid()
+            #plt.savefig('solution3.png')
+
+            #ax[1].title('Squared residuals')
+            MSE_Sigma = (1/len(Sigma))*sum((Sigma_yago_all[pt-1]-Sigma)**2)
+            MSE_A = (1/len(A))*sum((A_yago_all[pt-1]-A)**2)
+            MSE_phi = (1/len(phi))*sum((phi_yago_all[pt-1]-phi)**2)
+            
+            rel_err_Sigma = (abs(Sigma_yago_all[pt-1]-Sigma)/Sigma_yago_all[pt-1])
+            rel_err_A = (abs(A_yago_all[pt-1]-A)/A_yago_all[pt-1])
+            rel_err_phi = (abs(phi_yago_all[pt-1]-phi)/phi_yago_all[pt-1])
+            
+            RMS_Sigma = np.sqrt(sum(rel_err_Sigma**2)/len(rel_err_Sigma))
+            RMS_A = np.sqrt(sum(rel_err_A**2)/len(rel_err_A))
+            RMS_phi = np.sqrt(sum(rel_err_phi**2)/len(rel_err_phi))
+            
+            ax[1].plot(u,(Sigma_yago_all[pt-1]-Sigma)**2, color= 'r', label='$MSE_{\Sigma}$ = %.2E' % MSE_Sigma)
+            ax[1].plot(u,(A_yago_all[pt-1]-A)**2, color= 'b', label='$MSE_{A}$ = %.2E' % MSE_A)
+            ax[1].plot(u,(phi_yago_all[pt-1]-phi)**2, color= 'g', label='$MSE_{\phi}$ = %.2E' % MSE_phi)
+            #ax[1].ticklabel_format(axis='y', style='sci', scilimits=(1,1))
+            ax[1].set_xlabel('u',fontsize = fontsize)
+            ax[1].set_ylabel(r'(Theory-NN)$^2$',fontsize = fontsize)
+            ax[1].set_xlim(0,1)
+            ax[1].set_ylim(1e-12,max((phi_yago_all[pt-1]-phi)**2)*2)
+            ax[1].yaxis.set_major_formatter(ScalarFormatter(useMathText=True))
+            ax[1].ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+            ax[1].yaxis.get_offset_text().set_fontsize(n_fontsize)
+            
+
+            ax[1].legend(fontsize = legend_fontsize)
+            
+            title = r"$(T_{:.0f}, S_{:.0f})=({:.2f}, {:.2f})$".format(i+1,i+1,T_tt, S_tt)
+            plt.suptitle(title, fontsize = fontsize)
+            
+            for thing in ax:
+                thing.tick_params(axis='both', which='major', labelsize=n_fontsize)# Adjust the font size
+            plt.subplots_adjust(wspace=wspace)  # Increase or decrease the value to adjust the spacing
+            ax[1].set_yscale('log')
+            plt.savefig("DE_solution_pt"+str(i+1)+"_(phiM =1,best).pdf")
+            plt.show()
+    def render(self):
+
+        self.plot_loss()
+        #self.plot_residuals()
+        #self.plot_result()
+        #self.compare_to_yago2()
+        self.plot_potential(potential_cb,phim = 1.0,n_points = 5000)
+
+    # def save_results(self, path):
+
+    #     nets_state = []
+    #     best_nets_state = []
+
+    #     for i in range(len(self.solver.nets)):
+    #         nets_state.append(self.solver.nets[i].state_dict())
+    #         best_nets_state.append(self.solver.best_nets[i].state_dict())
+
+    #     V_net_state = self.V.state_dict()
+
+    #     state = {'epoch': self.solver.global_epoch, 
+    #              'state_dict_V': V_net_state, 
+    #             # 'state_V_dense': V_dense_state,
+    #            #  'state_V_alpha_param': V_alpha_param,
+    #              'state_dict_solver': nets_state,
+    #              'state_best_nets': best_nets_state,
+    #             # 'state_dense_nets': dense_nets_state,
+    #            #  'state_nets_alpha_param': nets_alpha_param,
+    #              'optimizer': self.adam.state_dict(), 
+    #              'loss': self.solver.metrics_history['r2_loss'],
+    #              'train_loss': self.solver.metrics_history['train_loss'],
+    #              #'add_loss': self.solver.metrics_history['add_loss']
+    #            #  'alpha_param_t': self.solver.metrics_history['V_alpha_param'],
+    #             }
+        
+    #     torch.save(state,path+'_epochs_'+str(len(self.solver.metrics_history['r2_loss'])))
+    #     print('Model succesfully saved')
 
     def save_results(self, path):
 
@@ -1850,16 +1914,64 @@ class NNholo():
                  'state_best_nets': best_nets_state,
                 # 'state_dense_nets': dense_nets_state,
                #  'state_nets_alpha_param': nets_alpha_param,
-                 'optimizer': self.optimizer.state_dict(), 
+                 'optimizer': self.adam.state_dict(), 
                  'loss': self.solver.metrics_history['r2_loss'],
                  'train_loss': self.solver.metrics_history['train_loss'],
-                 'V0_addloss': self.solver.metrics_history['V0_th_add_loss'],
-                 'DV0_addloss': self.solver.metrics_history['DV0_th_add_loss'],
-                 'DDV0_addloss': self.solver.metrics_history['DDV0_th_add_loss'],
-                'V_FV_th_add_loss': self.solver.metrics_history['V_FV_th_add_loss'],
-                'DV_FV_th_add_loss': self.solver.metrics_history['DV_FV_th_add_loss'],
-                'DDV_FV_th_add_loss': self.solver.metrics_history['DDV_FV_th_add_loss'],
                  #'add_loss': self.solver.metrics_history['add_loss']
+               #  'alpha_param_t': self.solver.metrics_history['V_alpha_param'],
+                }
+        
+        torch.save(state,path+'_epochs_'+str(len(self.solver.metrics_history['r2_loss'])))
+        print('Model succesfully saved')
+
+
+
+    def save_results_light(self, path):
+
+        nets_state = []
+        best_nets_state = []
+    
+        for i in range(len(self.solver.nets)):
+            nets_state.append(self.solver.nets[i].state_dict())
+            best_nets_state.append(self.solver.best_nets[i].state_dict())
+    
+        V_net_state = self.V.state_dict()
+    
+    
+        u = torch.linspace(0,1,250)
+        phi_solutions = []
+        step = 1
+        for i in range(len(self.Va_uh_all)):
+            S = self.Sigma_uh_all[i].detach().numpy()*np.ones_like(u.detach().numpy())
+            T = self.Va_uh_all[i].detach().numpy()*np.ones_like(u.detach().numpy())
+            Z = self.Z[i].detach().numpy()*np.ones_like(u.detach().numpy())
+            sol = self.solver.get_solution(best = True)
+            phi_sol = sol(u,S,T,Z)[5]
+            phi_solutions.append(phi_sol.detach().numpy())
+        
+        phi_samp = np.concatenate(phi_solutions)
+        # plt.hist(phi_samp)
+        # plt.xlabel(r'$\phi$')
+        # plt.show()
+        
+        phi_max = max(np.concatenate(phi_solutions))
+        phi_c = phi_solutions[-1][-1]
+        
+        state = {'epoch': self.solver.global_epoch, 
+                 'state_dict_V': V_net_state, 
+                 'phi_c': phi_c,
+                 'nets_arch': self.nets_arch,
+                 'V_arch': self.V_arch,
+                # 'state_V_dense': V_dense_state,
+               #  'state_V_alpha_param': V_alpha_param,
+                 'state_dict_solver': nets_state,
+                 'state_best_nets': best_nets_state,
+                # 'state_dense_nets': dense_nets_state,
+               #  'state_nets_alpha_param': nets_alpha_param,
+                 'optimizer': self.adam.state_dict(), 
+                #  'loss': self.solver.metrics_history['r2_loss'],
+                #  'train_loss': self.solver.metrics_history['train_loss'],
+                #  'add_loss': self.solver.metrics_history['add_loss']
                #  'alpha_param_t': self.solver.metrics_history['V_alpha_param'],
                 }
         
@@ -1871,14 +1983,7 @@ class NNholo():
     def load_results(self, path):
     
         # Add map_location to handle loading GPU models on CPU
-        if self.device is not None:
-            device = self.device
-        else:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            if str(device) == 'cpu':
-                device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-
-
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         master_dict = torch.load(path, map_location=device, weights_only=False)
 
         # self.nets_arch = master_dict['nets_arch']
@@ -1887,19 +1992,15 @@ class NNholo():
         self.V.load_state_dict(master_dict['state_dict_V'])
         # self.V.dense.load_state_dict(master_dict['state_V_dense'])
         # self.V.alpha = master_dict['state_V_alpha_param']
-
-        if self.optimizer_choice == 'Adam' and self.load_optimizer:
-            self.optimizer.load_state_dict(master_dict['optimizer'])
-            print('Loaded optimizer state successfully.')
-
-
+        
+        self.adam.load_state_dict(master_dict['optimizer'])
         self.solver = CustomBundleSolver1D( ode_system=self.equations,
                                             conditions=self.conditions,
                                             t_min=0.0,
                                             t_max=1.0,
                                             train_generator=self.train_generator,
                                             valid_generator=self.valid_generator,
-                                            optimizer=self.optimizer,
+                                            optimizer=self.adam,
                                             nets=self.nets,
                                             n_batches_valid=0,
                                             eq_param_index=(),
@@ -1907,32 +2008,14 @@ class NNholo():
                                             contrastive_weights = self.contrastive_w,
                                             u_pts= self.u_pts,
                                             V0_th_coef = self.V0_th_coef,
-                                            DV0_th_coef = self.DV0_th_coef,
-                                            DDV0_th_coef = self.DDV0_th_coef,
-                                            V_FV_th_coef = self.V_FV_th_coef,
-                                            DV_FV_th_coef = self.DV_FV_th_coef,
-                                            DDV_FV_th_coef = self.DDV_FV_th_coef,
                                             mono_phi_coef= self.mono_phi_coef,
-                                            phim=self.phim,
                                         )
-        self.solver.metrics_history['r2_loss'] = master_dict['loss']
-        self.solver.metrics_history['train_loss'] = master_dict['train_loss']
+        if 'r2_loss' in master_dict:
+            self.solver.metrics_history['r2_loss'] = master_dict['loss']
+        if 'train_loss' in master_dict:
+            self.solver.metrics_history['train_loss'] = master_dict['train_loss']
         if 'add_loss' in master_dict:  # Check if it exists for backward compatibility
             self.solver.metrics_history['add_loss'] = master_dict['add_loss']
-        if 'V0_addloss' in master_dict:
-            self.solver.metrics_history['V0_th_add_loss'] = master_dict['V0_addloss']
-        if 'DV0_addloss' in master_dict:
-            self.solver.metrics_history['DV0_th_add_loss'] = master_dict['DV0_addloss']
-        if 'DDV0_addloss' in master_dict:
-            self.solver.metrics_history['DDV0_th_add_loss'] = master_dict['DDV0_addloss']
-
-        if 'V_FV_th_add_loss' in master_dict:
-            self.solver.metrics_history['V_FV_th_add_loss'] = master_dict['V_FV_th_add_loss']
-        if 'DV_FV_th_add_loss' in master_dict:
-            self.solver.metrics_history['DV_FV_th_add_loss'] = master_dict['DV_FV_th_add_loss']
-        if 'DDV_FV_th_add_loss' in master_dict:
-            self.solver.metrics_history['DDV_FV_th_add_loss'] = master_dict['DDV_FV_th_add_loss']
-
         # self.solver.metrics_history['V_alpha_param'] = master_dict['alpha_param_t']
         
         self.solver.best_nets = np.ones_like(self.solver.nets)
